@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Publish a GitHub Release with this version (e.g. 0.1.6). Leave empty for a plain build."
+        required: false
+        default: ""
 
 permissions:
   contents: write # only used to publish a GitHub Release when a v* tag is pushed
@@ -25,6 +30,7 @@ jobs:
         shell: pwsh
         run: |
           if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
+          elseif ("${{ inputs.version }}" -ne "") { $v = "${{ inputs.version }}" }
           else { $v = "0.1.${{ github.run_number }}" }
           "value=$v" >> $env:GITHUB_OUTPUT
 
@@ -49,10 +55,11 @@ jobs:
           path: Releases/
 
       - name: GitHub Release
-        if: github.ref_type == 'tag'
+        if: github.ref_type == 'tag' || inputs.version != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create ${{ github.ref_name }} Releases/* --generate-notes
+        # From a manual run the tag doesn't exist yet; gh creates it on the built commit.
+        run: gh release create v${{ steps.version.outputs.value }} Releases/* --target ${{ github.sha }} --title "Quickey ${{ steps.version.outputs.value }}" --generate-notes
 
   core-linux:
     # The conversion engine is cross-platform; this catches regressions fast without a Windows runner.
