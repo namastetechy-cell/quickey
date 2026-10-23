@@ -81,7 +81,8 @@ public sealed class App : Application
         // Until the Lemon Squeezy store is filled in (Brand.cs) nothing can be bought, so it's a testing build: unlimited.
         _entitlements = new Entitlements(_license, _usage, unlimited: !Brand.IsStoreConfigured);
 
-        var registry = OperationRegistry.CreateDefault(new CropPrompt(), new Quickey.App.Text.WindowsOcr())
+        var dialogs = new Quickey.Core.Images.ImageDialogs(new CropPrompt(), new CompressPrompt(), new MetadataPrompt(), new EditPrompt());
+        var registry = OperationRegistry.CreateDefault(dialogs, new Quickey.App.Text.WindowsOcr())
             .AddRange(OfficeOperations.All())
             .AddRange(FileActions.All());
 

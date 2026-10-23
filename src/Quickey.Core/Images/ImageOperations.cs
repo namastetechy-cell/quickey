@@ -6,25 +6,33 @@ namespace Quickey.Core.Images;
 
 public static class ImageOperations
 {
-    public static IEnumerable<IOperation> All()
+    /// <param name="quickTools">
+    /// Include the one-click compress, fit-1920 and strip-metadata tools. The Windows app replaces
+    /// them with the Compress and Metadata windows, which do the same and more.
+    /// </param>
+    public static IEnumerable<IOperation> All(bool quickTools = true)
     {
         foreach (var target in ImageTarget.All)
             yield return new ConvertImageOperation(target);
 
         yield return new ResizeImageOperation("image.resize.half", "50%", image => image.Resize(new Percentage(50)));
-        yield return new ResizeImageOperation("image.resize.1920", "Fit 1920", image =>
+        if (quickTools)
         {
-            if (image.Width > 1920 || image.Height > 1920)
-                image.Resize(new MagickGeometry(1920, 1920));
-        });
-        yield return new CompressImageOperation();
+            yield return new ResizeImageOperation("image.resize.1920", "Fit 1920", image =>
+            {
+                if (image.Width > 1920 || image.Height > 1920)
+                    image.Resize(new MagickGeometry(1920, 1920));
+            });
+            yield return new CompressImageOperation();
+        }
         yield return new TransformImageOperation("image.rotate.right", "Rotate", Glyphs.Rotate, "-rotated", image => image.Rotate(90));
         yield return new TransformImageOperation("image.trim", "Trim edges", Glyphs.Crop, "-trimmed", image =>
         {
             image.Trim();
             image.ResetPage();
         });
-        yield return new TransformImageOperation("image.strip", "Strip info", Glyphs.Shield, "-clean", image => image.Strip());
+        if (quickTools)
+            yield return new TransformImageOperation("image.strip", "Strip info", Glyphs.Shield, "-clean", image => image.Strip());
         yield return new CombineImagesToPdfOperation();
     }
 }

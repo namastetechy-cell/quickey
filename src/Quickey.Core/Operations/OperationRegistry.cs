@@ -28,14 +28,23 @@ public sealed class OperationRegistry
     public IOperation? Find(string id) => _operations.FirstOrDefault(o => o.Id == id);
 
     /// <summary>
-    /// Every operation that runs on any platform: images and PDF. Crop needs a window to ask where
-    /// to crop, and scanned PDFs need OCR; both are left out or reduced when not supplied.
+    /// Every operation that runs on any platform: images and PDF. The image tools that need choices
+    /// (crop, compress, metadata, edit) come from the app's windows; without them, quick one-click
+    /// versions are offered instead. Scanned PDFs need OCR to give text.
     /// </summary>
-    public static OperationRegistry CreateDefault(Images.ICropPrompt? crop = null, Text.ITextRecognizer? ocr = null)
+    public static OperationRegistry CreateDefault(Images.ImageDialogs? dialogs = null, Text.ITextRecognizer? ocr = null)
     {
-        var registry = new OperationRegistry().AddRange(Images.ImageOperations.All());
-        if (crop is not null)
-            registry.Add(new Images.CropImageOperation(crop));
-        return registry.AddRange(Pdf.PdfOperations.All(ocr));
+        var registry = new OperationRegistry();
+        if (dialogs is not null)
+        {
+            // Registration order is wheel order: the most-used tools come first.
+            registry.Add(new Images.CompressImagesOperation(dialogs.Compress));
+            registry.Add(new Images.CropImageOperation(dialogs.Crop));
+            registry.Add(new Images.EditPhotoOperation(dialogs.Edit));
+            registry.Add(new Images.EditMetadataOperation(dialogs.Metadata));
+        }
+        return registry
+            .AddRange(Images.ImageOperations.All(quickTools: dialogs is null))
+            .AddRange(Pdf.PdfOperations.All(ocr));
     }
 }

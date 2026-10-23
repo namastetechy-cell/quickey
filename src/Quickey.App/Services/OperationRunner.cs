@@ -55,7 +55,8 @@ public sealed class OperationRunner(Entitlements entitlements, Func<AppSettings>
         {
             var done = files.Count - result.Skipped;
             var what = done == 1 ? Path.GetFileName(files[0]) : $"{done} files";
-            tray.Notify($"{operation.Label} done", $"{what} → {Describe(result.Outputs)}. Click to show.",
+            var note = result.Note is null ? "" : $" ({result.Note})";
+            tray.Notify($"{operation.Label} done", $"{what} → {Describe(result.Outputs)}{note}. Click to show.",
                 onClick: first is null ? null : () => TrayIcon.Reveal(first));
         }
         else

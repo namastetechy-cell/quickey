@@ -10,6 +10,9 @@ public sealed class OperationResult(string label)
 
     /// <summary>Files the user chose to skip (e.g. in the crop window). Not errors, and not charged.</summary>
     public int Skipped { get; set; }
+
+    /// <summary>Optional one-line summary for the notification, e.g. "4.2 MB → 640 KB".</summary>
+    public string? Note { get; set; }
     public bool Succeeded => Errors.Count == 0;
 
     public static OperationResult Failed(string label, string file, string message)

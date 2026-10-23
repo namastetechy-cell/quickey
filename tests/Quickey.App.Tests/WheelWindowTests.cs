@@ -34,7 +34,8 @@ public class WheelWindowTests : IDisposable
 
     private static WheelWindow NewWheel()
     {
-        var registry = OperationRegistry.CreateDefault(new CropPrompt()).AddRange(OfficeOperations.All()).AddRange(FileActions.All());
+        var dialogs = new Quickey.Core.Images.ImageDialogs(new CropPrompt(), new CompressPrompt(), new MetadataPrompt(), new EditPrompt());
+        var registry = OperationRegistry.CreateDefault(dialogs).AddRange(OfficeOperations.All()).AddRange(FileActions.All());
         var settings = new AppSettings();
         return new WheelWindow(registry, () => settings);
     }
@@ -71,6 +72,8 @@ public class WheelWindowTests : IDisposable
                 wheel.ShowForDrag(OperationCategory.Tools, Cursor); // modifier tapped mid-drag
                 Assert.Contains(wheel.Wedges, o => o.Id == "image.compress");
                 Assert.Contains(wheel.Wedges, o => o.Id == "image.crop");
+                Assert.Contains(wheel.Wedges, o => o.Id == "image.edit");
+                Assert.Contains(wheel.Wedges, o => o.Id == "image.metadata");
 
                 wheel.SimulateDragEnter([pdf]);
                 Assert.Contains(wheel.Wedges, o => o.Id == "pdf.split");

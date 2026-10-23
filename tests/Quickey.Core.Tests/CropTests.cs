@@ -145,7 +145,7 @@ public class CropTests : IDisposable
         var png = new[] { _temp.Image("a.png") };
 
         Assert.DoesNotContain(OperationRegistry.CreateDefault().For(OperationCategory.Tools, png), o => o.Id == "image.crop");
-        Assert.Contains(OperationRegistry.CreateDefault(crop: new ScriptedPrompt()).For(OperationCategory.Tools, png), o => o.Id == "image.crop");
+        Assert.Contains(OperationRegistry.CreateDefault(FakeDialogs.With(crop: new ScriptedPrompt())).For(OperationCategory.Tools, png), o => o.Id == "image.crop");
     }
 
     private sealed class ScriptedPrompt(params CropDecision[] decisions) : ICropPrompt

@@ -20,4 +20,6 @@ public static class Glyphs
     public const string Terminal = "";
     public const string Folder = "";
     public const string Share = "";
+    public const string Tag = "\uE8EC";
+    public const string Sliders = "\uE9E9";
 }
