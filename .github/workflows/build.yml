@@ -29,7 +29,9 @@ jobs:
           "value=$v" >> $env:GITHUB_OUTPUT
 
       - name: Test
-        run: dotnet test tests/Quickey.Core.Tests -c Release
+        run: |
+          dotnet test tests/Quickey.Core.Tests -c Release
+          dotnet test tests/Quickey.App.Tests -c Release
 
       - name: Publish
         run: >

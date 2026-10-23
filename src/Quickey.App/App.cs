@@ -49,6 +49,23 @@ public sealed class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Log.Info($"Quickey {Log.Version} starting on {Environment.OSVersion}");
+
+        // Quickey runs all day in the tray: a bug in one feature must not take the whole app down
+        // (and with it the drag hooks). Log it, tell the user, keep running.
+        DispatcherUnhandledException += (_, args) =>
+        {
+            Log.Error("Unhandled UI exception", args.Exception);
+            args.Handled = true;
+            _tray?.Notify("Quickey hit a problem", "It's still running. Details are in the log (tray menu → Open log folder).", isError: true);
+        };
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Error("Unobserved task exception", args.Exception);
+            args.SetObserved();
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            Log.Error("Fatal exception", args.ExceptionObject as Exception);
 
         var firstRun = !File.Exists(AppPaths.Settings);
         _settings = _settingsStore.Load();
@@ -68,17 +85,24 @@ public sealed class App : Application
             .AddRange(FileActions.All());
 
         _wheel = new WheelWindow(registry, () => _settings);
-        _tray = new TrayIcon(OpenSettings, TogglePause, OpenCheckout, Quit);
+        _tray = new TrayIcon(OpenSettings, TogglePause, OpenCheckout, OpenLogFolder, Quit);
         _runner = new OperationRunner(_entitlements, () => _settings, _tray, OpenCheckout, RefreshStatus);
         _updates = new UpdateService(() => _settings.UpdateUrl, _tray);
-        _wheel.OperationChosen += async (_, chosen) => await _runner.RunAsync(chosen.Operation, chosen.Files);
+        _wheel.OperationChosen += async (_, chosen) =>
+        {
+            Log.Info($"Run {chosen.Operation.Id} on {chosen.Files.Count} file(s)");
+            await _runner.RunAsync(chosen.Operation, chosen.Files);
+        };
         _license.Changed += (_, _) => Dispatcher.BeginInvoke(RefreshStatus);
 
         _watcher = new DragWatcher(Dispatcher, () => _settings.ExplorerOnly) { IgnorePoint = _wheel.Contains };
         _watcher.ModifierPressed += (_, args) =>
         {
             if (_settings.CategoryFor(args.Key) is { } category)
+            {
+                Log.Info($"{args.Key} mid-drag → {category} wheel");
                 _wheel.ShowForDrag(category, args.Cursor);
+            }
         };
         _watcher.DragEnded += (_, _) => _wheel.OnDragReleased();
         _watcher.Cancelled += (_, _) => _wheel.HideWheel();
@@ -88,6 +112,7 @@ public sealed class App : Application
         }
         catch (InvalidOperationException ex)
         {
+            Log.Error("Hooks failed", ex);
             _tray.Notify("Quickey can't watch drags", ex.Message + " The right-click menu still works.", isError: true);
         }
 
@@ -136,6 +161,7 @@ public sealed class App : Application
         _filesBatch.Stop();
         var files = _pendingFiles.ToList();
         _pendingFiles.Clear();
+        Log.Info($"Right-click menu: {files.Count} file(s)");
         Win32.GetCursorPos(out var cursor);
         _wheel.ShowForFiles(files, OperationCategory.Convert, cursor);
     }
@@ -183,6 +209,15 @@ public sealed class App : Application
         _settingsStore.Save(settings);
     }
 
+    private static void OpenLogFolder()
+    {
+        Directory.CreateDirectory(AppPaths.Root);
+        if (File.Exists(Log.FilePath))
+            TrayIcon.Reveal(Log.FilePath);
+        else
+            System.Diagnostics.Process.Start("explorer.exe", $"\"{AppPaths.Root}\"");
+    }
+
     private void OpenCheckout()
     {
         if (Brand.CheckoutUrl != "")
@@ -193,6 +228,7 @@ public sealed class App : Application
 
     private void Quit()
     {
+        Log.Info("Quit");
         _watcher.Dispose();
         _tray.Dispose();
         _updates.ApplyOnExit();

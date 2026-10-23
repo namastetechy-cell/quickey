@@ -28,8 +28,11 @@ public sealed class OperationRunner(Entitlements entitlements, Func<AppSettings>
         }
         catch (Exception ex)
         {
+            Log.Error($"{operation.Id} threw", ex);
             result = OperationResult.Failed(operation.Label, files[0], ex.Message);
         }
+        foreach (var error in result.Errors)
+            Log.Error($"{operation.Id} failed for {error.File}: {error.Message}");
 
         entitlements.Charge(operation, files.Count - result.Errors.Select(e => e.File).Distinct().Count());
         statusChanged();

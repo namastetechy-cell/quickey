@@ -14,7 +14,7 @@ public sealed class TrayIcon : IDisposable
     private readonly WinForms.ToolStripMenuItem _getPro = new("Get Quickey Pro…");
     private Action? _balloonClick;
 
-    public TrayIcon(Action openSettings, Action togglePause, Action getPro, Action quit)
+    public TrayIcon(Action openSettings, Action togglePause, Action getPro, Action openLog, Action quit)
     {
         var iconStream = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/quickey.ico"))!.Stream;
         _icon = new WinForms.NotifyIcon
@@ -34,6 +34,7 @@ public sealed class TrayIcon : IDisposable
             _pause,
             _getPro,
             new WinForms.ToolStripSeparator(),
+            new WinForms.ToolStripMenuItem("Open log folder", null, (_, _) => openLog()),
             new WinForms.ToolStripMenuItem("Quit Quickey", null, (_, _) => quit()),
         ]);
         _icon.DoubleClick += (_, _) => openSettings();
@@ -44,8 +45,11 @@ public sealed class TrayIcon : IDisposable
     {
         _pause.Text = paused ? "Resume" : "Pause";
         _getPro.Visible = !isPro && Brand.CheckoutUrl != "";
-        _status.Text = paused ? "Paused" : isPro ? "Quickey Pro" : $"Free: {remainingToday} conversions left today";
-        _icon.Text = $"{Brand.Name} – {_status.Text}";
+        var state = paused ? "Paused" : isPro ? "Pro" : $"Free: {remainingToday} conversions left today";
+        _status.Text = $"Quickey {Log.Version} · {state}";
+        // NotifyIcon tooltips are limited to 63 characters.
+        var tip = $"{Brand.Name} {Log.Version} – {state}";
+        _icon.Text = tip.Length <= 63 ? tip : tip[..63];
     }
 
     public void Notify(string title, string message, bool isError = false, Action? onClick = null)

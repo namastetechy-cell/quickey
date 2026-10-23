@@ -4,7 +4,6 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using Quickey.App.Native;
@@ -37,6 +36,7 @@ public sealed class WheelWindow : Window
     private static readonly Brush WedgeHover = Frozen(Color.FromRgb(0x63, 0x66, 0xF1));
     private static readonly Brush DiscFill = Frozen(Color.FromArgb(0xF7, 0x16, 0x15, 0x24));
     private static readonly Brush TextBrush = Frozen(Colors.White);
+    private static readonly Brush RimBrush = Frozen(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
     private static readonly Brush HintBrush = Frozen(Color.FromRgb(0xA5, 0xA3, 0xC2));
 
     private readonly OperationRegistry _registry;
@@ -45,6 +45,9 @@ public sealed class WheelWindow : Window
     private readonly ScaleTransform _scale = new(1, 1, Center, Center);
     private readonly TextBlock _title = new() { Foreground = TextBrush, FontSize = 17, FontWeight = FontWeights.SemiBold, TextAlignment = TextAlignment.Center };
     private readonly TextBlock _hint = new() { Foreground = HintBrush, FontSize = 11, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap, Width = InnerRadius * 2 - 16 };
+    // Created once and re-added on every rebuild. Its TextBlocks must never be moved into a new
+    // panel: an element can only have one parent, and doing so throws (and used to crash the app).
+    private readonly StackPanel _centerText = new() { Width = InnerRadius * 2, IsHitTestVisible = false };
     private readonly DispatcherTimer _hideAfterRelease = new() { Interval = TimeSpan.FromMilliseconds(600) };
     private readonly List<Wedge> _wedges = [];
 
@@ -53,6 +56,13 @@ public sealed class WheelWindow : Window
     private bool _clickMode;
     private int _hovered = -1;
     private IntPtr _hwnd;
+    private long _shownAt;
+
+    /// <summary>
+    /// Just after the right-click menu launches us, Explorer re-activates its own window. Losing
+    /// focus or capture in this window of time is that hand-back, not the user clicking away.
+    /// </summary>
+    private bool InOpeningGrace => Environment.TickCount64 - _shownAt < 800;
 
     public WheelWindow(OperationRegistry registry, Func<AppSettings> settings)
     {
@@ -72,17 +82,27 @@ public sealed class WheelWindow : Window
         SizeToContent = SizeToContent.Manual;
 
         _canvas.RenderTransform = _scale;
+        _centerText.Children.Add(_title);
+        _centerText.Children.Add(_hint);
         Content = _canvas;
 
-        DragEnter += OnDragOver;
+        DragEnter += OnDragEnter;
         DragOver += OnDragOver;
         DragLeave += (_, _) => SetHovered(-1);
         Drop += OnDrop;
         MouseMove += (_, e) => { if (_clickMode) SetHovered(HitTest(e.GetPosition(_canvas))); };
         MouseLeftButtonUp += OnClick;
         KeyDown += OnKeyDown;
-        Deactivated += (_, _) => { if (_clickMode) HideWheel(); };
-        LostMouseCapture += (_, _) => { if (_clickMode && IsOpen && !IsMouseCaptured) HideWheel(); };
+        Deactivated += (_, _) => { if (_clickMode && !InOpeningGrace) HideWheel(); };
+        LostMouseCapture += (_, _) =>
+        {
+            if (!_clickMode || !IsOpen || IsMouseCaptured)
+                return;
+            if (InOpeningGrace)
+                Dispatcher.BeginInvoke(() => { if (_clickMode && IsOpen) CaptureMouse(); }); // Explorer grabbed it back; take it again.
+            else
+                HideWheel();
+        };
         _hideAfterRelease.Tick += (_, _) => HideWheel();
     }
 
@@ -123,6 +143,7 @@ public sealed class WheelWindow : Window
         _clickMode = true;
         _files = files;
         SetCategory(category);
+        _shownAt = Environment.TickCount64;
         Present(cursor);
         Win32.SetForegroundWindow(Handle);
         Activate();
@@ -192,8 +213,9 @@ public sealed class WheelWindow : Window
         _wedges.Clear();
         _hovered = -1;
 
-        var disc = new Ellipse { Width = OuterRadius * 2 + 12, Height = OuterRadius * 2 + 12, Fill = DiscFill };
-        disc.Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 4, Opacity = 0.45 };
+        // No DropShadowEffect: on a transparent (layered) window it's re-rendered in software on every
+        // hover change, which made the drag cursor stutter. A rim reads as well and costs nothing.
+        var disc = new Ellipse { Width = OuterRadius * 2 + 12, Height = OuterRadius * 2 + 12, Fill = DiscFill, Stroke = RimBrush, StrokeThickness = 1 };
         Place(disc, Center - disc.Width / 2, Center - disc.Height / 2);
 
         var operations = _files.Count == 0 ? [] : _registry.For(_category, _files);
@@ -210,12 +232,7 @@ public sealed class WheelWindow : Window
 
         var hub = new Ellipse { Width = InnerRadius * 2 - 6, Height = InnerRadius * 2 - 6, Fill = WedgeFill };
         Place(hub, Center - hub.Width / 2, Center - hub.Height / 2);
-        var centerText = new StackPanel { Width = InnerRadius * 2, Children = { _title, _hint } };
-        _canvas.Children.Add(centerText);
-        centerText.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
-        Canvas.SetLeft(centerText, Center - InnerRadius);
-        Canvas.SetTop(centerText, Center - centerText.DesiredSize.Height / 2);
-
+        _canvas.Children.Add(_centerText);
         UpdateCenterText();
     }
 
@@ -252,6 +269,10 @@ public sealed class WheelWindow : Window
             _hint.Text = $"Nothing to {_category.ToString().ToLowerInvariant()} for {Describe(_files)}";
         else
             _hint.Text = $"{Describe(_files)}\n{settings.ConvertKey} · {settings.ToolsKey} · {settings.ActionsKey}";
+
+        _centerText.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        Canvas.SetLeft(_centerText, Center - InnerRadius);
+        Canvas.SetTop(_centerText, Center - _centerText.DesiredSize.Height / 2);
     }
 
     private static string Describe(IReadOnlyList<string> files) =>
@@ -269,8 +290,16 @@ public sealed class WheelWindow : Window
         UpdateCenterText();
     }
 
+    /// <summary>Operations currently on the wheel, in clockwise order from 12 o'clock.</summary>
+    internal IReadOnlyList<IOperation> Wedges => _wedges.Select(w => w.Operation).ToList();
+
+    internal string HintText => _hint.Text;
+
+    /// <summary>What a drag entering the wheel does, without OLE.</summary>
+    internal void SimulateDragEnter(IReadOnlyList<string> files) => SetFiles(files);
+
     /// <summary>Which wedge a point (in canvas coordinates) is over, or -1 for the hub and outside.</summary>
-    private int HitTest(Point point)
+    internal int HitTest(Point point)
     {
         var dx = point.X - Center;
         var dy = point.Y - Center;
@@ -287,10 +316,28 @@ public sealed class WheelWindow : Window
     private IOperation? Runnable(int index) =>
         index >= 0 && _wedges[index].Operation.UnavailableReason is null ? _wedges[index].Operation : null;
 
+    private void OnDragEnter(object sender, DragEventArgs e)
+    {
+        SetFiles(ReadFiles(e.Data));
+        OnDragOver(sender, e);
+    }
+
+    /// <summary>File paths in a drag. Virtual items (inside a zip, a phone, the recycle bin) have none.</summary>
+    private static string[] ReadFiles(IDataObject data)
+    {
+        try
+        {
+            return data.GetDataPresent(DataFormats.FileDrop) ? data.GetData(DataFormats.FileDrop) as string[] ?? [] : [];
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+            return [];
+        }
+    }
+
     private void OnDragOver(object sender, DragEventArgs e)
     {
         _hideAfterRelease.Stop();
-        SetFiles(e.Data.GetData(DataFormats.FileDrop) as string[] ?? []);
         SetHovered(HitTest(e.GetPosition(_canvas)));
         // Always Copy, never Move: a Move effect would make Explorer delete the originals after the drop.
         e.Effects = Runnable(_hovered) is not null ? DragDropEffects.Copy : DragDropEffects.None;
@@ -299,7 +346,7 @@ public sealed class WheelWindow : Window
 
     private void OnDrop(object sender, DragEventArgs e)
     {
-        var files = e.Data.GetData(DataFormats.FileDrop) as string[] ?? [];
+        var files = ReadFiles(e.Data);
         var operation = Runnable(HitTest(e.GetPosition(_canvas)));
         e.Effects = operation is not null ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;

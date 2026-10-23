@@ -121,6 +121,7 @@ public sealed class DragWatcher : IDisposable
     {
         _threadId = Win32.GetCurrentThreadId();
         var error = Install();
+        Services.Log.Info(error == 0 ? "Input hooks installed" : $"Input hooks failed: Win32 error {error}");
         started.SetResult(error);
         if (error != 0)
             return;
@@ -131,7 +132,10 @@ public sealed class DragWatcher : IDisposable
             if (msg.message == Win32.WM_TIMER)
                 Watchdog();
             else if (msg.message == ReinstallMessage)
+            {
+                Services.Log.Info("Reinstalling input hooks (resume/unlock)");
                 Install();
+            }
         }
         Win32.KillTimer(IntPtr.Zero, timer);
         Uninstall();
@@ -177,7 +181,10 @@ public sealed class DragWatcher : IDisposable
         var moved = cursor.X != _lastHookPoint.X || cursor.Y != _lastHookPoint.Y;
         var silentFor = Environment.TickCount64 - _lastMouseEventTicks;
         if (moved && silentFor > WatchdogMs)
+        {
+            Services.Log.Info($"Input hooks went silent for {silentFor} ms; reinstalling");
             Install();
+        }
     }
 
     private IntPtr OnMouse(int nCode, IntPtr wParam, IntPtr lParam)
