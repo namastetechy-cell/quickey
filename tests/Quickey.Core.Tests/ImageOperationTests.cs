@@ -95,16 +95,6 @@ public class ImageOperationTests : IDisposable
     }
 
     [Fact]
-    public async Task Square_crops_to_the_short_side()
-    {
-        var source = _temp.Image("wide.png", 300, 120);
-
-        var result = await Run("image.square", source);
-
-        Assert.Equal((120u, 120u), Size(Assert.Single(result.Outputs)));
-    }
-
-    [Fact]
     public async Task Rotate_swaps_dimensions()
     {
         var source = _temp.Image("wide.jpg", 300, 120);

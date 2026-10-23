@@ -80,12 +80,55 @@ public class PdfOperationTests : IDisposable
     [Fact]
     public async Task Extracts_text_to_a_txt_file()
     {
-        var source = _temp.Pdf("doc.pdf", "white");
+        var source = _temp.TextPdf("doc.pdf", "Hello Quickey", "Second line 123");
 
         var result = await Run("pdf.to.txt", source);
 
         Assert.True(result.Succeeded, string.Join("; ", result.Errors.Select(e => e.Message)));
-        Assert.Equal(_temp.File("doc.txt"), Assert.Single(result.Outputs));
+        var text = File.ReadAllText(Assert.Single(result.Outputs));
+        Assert.Contains("Hello Quickey", text);
+        Assert.Contains("Second line 123", text);
+    }
+
+    [Fact]
+    public async Task Scanned_pdf_without_ocr_explains_instead_of_writing_an_empty_file()
+    {
+        var scan = _temp.Pdf("scan.pdf", "white");
+
+        var result = await Run("pdf.to.txt", scan);
+
+        Assert.Empty(result.Outputs);
+        Assert.Contains("scanned", Assert.Single(result.Errors).Message);
+        Assert.False(File.Exists(_temp.File("scan.txt")));
+    }
+
+    [Fact]
+    public async Task Scanned_pages_go_through_ocr_and_text_pages_do_not()
+    {
+        var ocr = new FakeOcr("Recognised words");
+        var registry = OperationRegistry.CreateDefault(ocr: ocr);
+        var scan = _temp.Pdf("scan.pdf", "white", "white");
+        var text = _temp.TextPdf("text.pdf", "Real text layer");
+
+        var scanned = await registry.Find("pdf.to.txt")!.RunAsync([scan], _context, CancellationToken.None);
+        Assert.Equal(2, ocr.Calls);
+        Assert.Contains("Recognised words", File.ReadAllText(Assert.Single(scanned.Outputs)));
+        Assert.Contains("--- Page 2 ---", File.ReadAllText(scanned.Outputs[0]));
+
+        await registry.Find("pdf.to.txt")!.RunAsync([text], _context, CancellationToken.None);
+        Assert.Equal(2, ocr.Calls);
+    }
+
+    private sealed class FakeOcr(string text) : Quickey.Core.Text.ITextRecognizer
+    {
+        public int Calls { get; private set; }
+
+        public Task<string> RecognizeAsync(byte[] image, CancellationToken cancellationToken)
+        {
+            Assert.Equal(ImageMagick.MagickFormat.Png, new ImageMagick.MagickImageInfo(image).Format);
+            Calls++;
+            return Task.FromResult(text);
+        }
     }
 
     [Fact]

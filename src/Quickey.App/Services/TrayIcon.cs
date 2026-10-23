@@ -41,11 +41,11 @@ public sealed class TrayIcon : IDisposable
         _icon.BalloonTipClicked += (_, _) => _balloonClick?.Invoke();
     }
 
-    public void SetStatus(bool paused, bool isPro, int remainingToday)
+    public void SetStatus(bool paused, bool isPro, bool testingBuild, int remainingToday)
     {
         _pause.Text = paused ? "Resume" : "Pause";
         _getPro.Visible = !isPro && Brand.CheckoutUrl != "";
-        var state = paused ? "Paused" : isPro ? "Pro" : $"Free: {remainingToday} conversions left today";
+        var state = paused ? "Paused" : testingBuild ? "Testing build, unlimited" : isPro ? "Pro" : $"Free: {remainingToday} conversions left today";
         _status.Text = $"Quickey {Log.Version} · {state}";
         // NotifyIcon tooltips are limited to 63 characters.
         var tip = $"{Brand.Name} {Log.Version} – {state}";

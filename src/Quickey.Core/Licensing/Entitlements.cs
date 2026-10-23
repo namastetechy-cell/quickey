@@ -3,9 +3,15 @@ using Quickey.Core.Operations;
 namespace Quickey.Core.Licensing;
 
 /// <summary>The single place that answers "may this run right now?".</summary>
-public sealed class Entitlements(LicenseManager license, UsageTracker usage)
+/// <param name="unlimited">
+/// Testing builds: no store is configured yet, so nothing could be bought. Everything is unlocked
+/// until real store details are filled in.
+/// </param>
+public sealed class Entitlements(LicenseManager license, UsageTracker usage, bool unlimited = false)
 {
-    public bool IsPro => license.IsPro;
+    public bool IsUnlimitedBuild => unlimited;
+
+    public bool IsPro => unlimited || license.IsPro;
 
     public int RemainingToday => IsPro ? int.MaxValue : usage.RemainingToday;
 

@@ -24,12 +24,6 @@ public static class ImageOperations
             image.Trim();
             image.ResetPage();
         });
-        yield return new TransformImageOperation("image.square", "Square", Glyphs.Crop, "-square", image =>
-        {
-            var side = Math.Min(image.Width, image.Height);
-            image.Crop(new MagickGeometry(side, side), Gravity.Center);
-            image.ResetPage();
-        });
         yield return new TransformImageOperation("image.strip", "Strip info", Glyphs.Shield, "-clean", image => image.Strip());
         yield return new CombineImagesToPdfOperation();
     }

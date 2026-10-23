@@ -2,17 +2,18 @@ using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using Quickey.Core.Images;
 using Quickey.Core.Operations;
+using Quickey.Core.Text;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace Quickey.Core.Pdf;
 
 public static class PdfOperations
 {
-    public static IEnumerable<IOperation> All()
+    public static IEnumerable<IOperation> All(ITextRecognizer? ocr = null)
     {
         yield return new PdfToImagesOperation(ImageTarget.Png);
         yield return new PdfToImagesOperation(ImageTarget.Jpg);
-        yield return new PdfToTextOperation();
+        yield return new PdfToTextOperation(ocr);
         yield return new MergePdfOperation();
         yield return new SplitPdfOperation();
         yield return new RotatePdfOperation();
@@ -66,9 +67,16 @@ public sealed class PdfToImagesOperation(ImageTarget target) : PerFileOperation
     }
 }
 
-/// <summary>Extracts the text layer in reading order. Scanned PDFs without a text layer produce an empty file.</summary>
-public sealed class PdfToTextOperation : PerFileOperation
+/// <summary>
+/// Extracts the text layer in reading order. Pages without one (scans, photos of documents) are
+/// rendered and read with OCR when available, so a scanned PDF still gives useful text.
+/// </summary>
+public sealed class PdfToTextOperation(ITextRecognizer? ocr = null) : PerFileOperation
 {
+    /// <summary>A page with fewer letters than this is treated as having no text layer.</summary>
+    private const int MinLettersForTextLayer = 3;
+    private const int OcrDpi = 200;
+
     public override string Id => "pdf.to.txt";
     public override string Label => "Text";
     public override string Glyph => Glyphs.Text;
@@ -78,13 +86,48 @@ public sealed class PdfToTextOperation : PerFileOperation
 
     protected override IEnumerable<string> ProcessFile(string file, OperationContext context, CancellationToken cancellationToken)
     {
-        using var document = UglyToad.PdfPig.PdfDocument.Open(file);
-        var output = context.OutputPathFor(file, ".txt");
-        using var writer = new StreamWriter(output);
-        foreach (var page in document.GetPages())
+        var pages = new List<string>();
+        var bytes = File.ReadAllBytes(file);
+        using (var document = UglyToad.PdfPig.PdfDocument.Open(bytes))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            writer.WriteLine(ContentOrderTextExtractor.GetText(page));
+            foreach (var page in document.GetPages())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string text;
+                try
+                {
+                    text = ContentOrderTextExtractor.GetText(page);
+                }
+                catch (Exception)
+                {
+                    // The layout analyser chokes on some unusual pages; the raw text is still useful.
+                    text = page.Text;
+                }
+                pages.Add(text);
+            }
+        }
+
+        for (var i = 0; i < pages.Count; i++)
+        {
+            if (pages[i].Count(char.IsLetterOrDigit) >= MinLettersForTextLayer || ocr is null)
+                continue;
+            using var png = new MemoryStream();
+            PDFtoImage.Conversion.SavePng(png, bytes, i, options: new PDFtoImage.RenderOptions(Dpi: OcrDpi, BackgroundColor: SkiaSharp.SKColors.White));
+            pages[i] = ocr.RecognizeAsync(png.ToArray(), cancellationToken).GetAwaiter().GetResult();
+        }
+
+        if (pages.All(p => p.Count(char.IsLetterOrDigit) < MinLettersForTextLayer))
+            throw new InvalidOperationException(ocr is null
+                ? "No text found. This looks like a scanned PDF, and text recognition isn't available here."
+                : "No text found, even with text recognition. The pages may be blank or unreadable.");
+
+        var output = context.OutputPathFor(file, ".txt");
+        using var writer = new StreamWriter(output, append: false, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+        for (var i = 0; i < pages.Count; i++)
+        {
+            if (pages.Count > 1)
+                writer.WriteLine($"--- Page {i + 1} ---");
+            writer.WriteLine(pages[i].Trim());
             writer.WriteLine();
         }
         return [output];

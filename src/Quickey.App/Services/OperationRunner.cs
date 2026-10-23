@@ -34,7 +34,7 @@ public sealed class OperationRunner(Entitlements entitlements, Func<AppSettings>
         foreach (var error in result.Errors)
             Log.Error($"{operation.Id} failed for {error.File}: {error.Message}");
 
-        entitlements.Charge(operation, files.Count - result.Errors.Select(e => e.File).Distinct().Count());
+        entitlements.Charge(operation, files.Count - result.Skipped - result.Errors.Select(e => e.File).Distinct().Count());
         statusChanged();
         Report(operation, files, result);
     }
@@ -44,13 +44,17 @@ public sealed class OperationRunner(Entitlements entitlements, Func<AppSettings>
         // Actions (copy path, etc.) speak for themselves; only report their failures.
         if (operation.Category == OperationCategory.Actions && result.Succeeded)
             return;
+        // Everything skipped or cancelled (crop window): the user knows, nothing to say.
+        if (result.Outputs.Count == 0 && result.Succeeded)
+            return;
         if (!settings().ShowNotifications && result.Succeeded)
             return;
 
         var first = result.Outputs.FirstOrDefault();
         if (result.Succeeded)
         {
-            var what = files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} files";
+            var done = files.Count - result.Skipped;
+            var what = done == 1 ? Path.GetFileName(files[0]) : $"{done} files";
             tray.Notify($"{operation.Label} done", $"{what} → {Describe(result.Outputs)}. Click to show.",
                 onClick: first is null ? null : () => TrayIcon.Reveal(first));
         }

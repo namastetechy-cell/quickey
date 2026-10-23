@@ -137,6 +137,17 @@ public class LicensingTests : IDisposable
     }
 
     [Fact]
+    public void Testing_builds_are_unlimited()
+    {
+        var usage = new UsageTracker(_temp.File("usage.json"), _clock);
+        usage.TryConsume(UsageTracker.FreeDailyConversions);
+        var testing = new Entitlements(Manager(), usage, unlimited: true);
+
+        Assert.True(testing.IsPro);
+        Assert.True(testing.CanRun(new StubOperation(countsTowardLimit: true), 1000));
+    }
+
+    [Fact]
     public void Charges_only_succeeded_files_and_never_past_the_allowance()
     {
         var usage = new UsageTracker(_temp.File("usage.json"), _clock);

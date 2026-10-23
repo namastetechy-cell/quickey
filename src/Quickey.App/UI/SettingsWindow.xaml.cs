@@ -13,9 +13,11 @@ public partial class SettingsWindow : Window
     private readonly Action<AppSettings> _save;
     private readonly LicenseManager _license;
     private readonly UsageTracker _usage;
+    private readonly bool _testingBuild;
 
-    public SettingsWindow(AppSettings settings, Action<AppSettings> save, LicenseManager license, UsageTracker usage)
+    public SettingsWindow(AppSettings settings, Action<AppSettings> save, LicenseManager license, UsageTracker usage, bool testingBuild)
     {
+        _testingBuild = testingBuild;
         InitializeComponent();
         _settings = settings;
         _save = save;
@@ -45,6 +47,12 @@ public partial class SettingsWindow : Window
     {
         var record = _license.Current;
         var pro = _license.IsPro;
+        if (_testingBuild)
+        {
+            LicenseStatus.Text = "Testing build: unlimited conversions. Licensing switches on once the store details are filled in.";
+            ActivatePanel.Visibility = Deactivate.Visibility = GetPro.Visibility = Visibility.Collapsed;
+            return;
+        }
         LicenseStatus.Text = pro
             ? $"Quickey Pro is active on this PC{(record?.CustomerEmail is { } email ? $" ({email})" : "")}. Unlimited conversions."
             : $"Free version: {_usage.RemainingToday} of {UsageTracker.FreeDailyConversions} conversions left today. File actions are always free.";

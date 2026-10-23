@@ -78,9 +78,10 @@ public sealed class App : Application
 
         var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         _license = new LicenseManager(new LemonSqueezyClient(http, Brand.LicenseProduct), new DpapiLicenseStore(AppPaths.License));
-        _entitlements = new Entitlements(_license, _usage);
+        // Until the Lemon Squeezy store is filled in (Brand.cs) nothing can be bought, so it's a testing build: unlimited.
+        _entitlements = new Entitlements(_license, _usage, unlimited: !Brand.IsStoreConfigured);
 
-        var registry = OperationRegistry.CreateDefault()
+        var registry = OperationRegistry.CreateDefault(new CropPrompt(), new Quickey.App.Text.WindowsOcr())
             .AddRange(OfficeOperations.All())
             .AddRange(FileActions.All());
 
@@ -173,7 +174,7 @@ public sealed class App : Application
         RefreshStatus();
     }
 
-    private void RefreshStatus() => _tray.SetStatus(_paused, _entitlements.IsPro, _usage.RemainingToday);
+    private void RefreshStatus() => _tray.SetStatus(_paused, _entitlements.IsPro, _entitlements.IsUnlimitedBuild, _usage.RemainingToday);
 
     private void TogglePause()
     {
@@ -197,7 +198,7 @@ public sealed class App : Application
             _settingsWindow.Activate();
             return;
         }
-        _settingsWindow = new SettingsWindow(_settings, SaveSettings, _license, _usage);
+        _settingsWindow = new SettingsWindow(_settings, SaveSettings, _license, _usage, _entitlements.IsUnlimitedBuild);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
         _settingsWindow.Activate();
