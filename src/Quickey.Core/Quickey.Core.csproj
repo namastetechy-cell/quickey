@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- PDFtoImage is annotated per-OS; Quickey only ships on Windows and is tested on Linux. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.0.0" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <!-- PDFsharp 6.5+ is AGPL-3.0, which a closed-source paid app cannot ship. 6.2.4 is the last MIT release: do not upgrade. -->
+    <PackageReference Include="PDFsharp" Version="[6.2.4]" />
+    <PackageReference Include="PDFtoImage" Version="5.4.0" />
+  </ItemGroup>
+
+</Project>
