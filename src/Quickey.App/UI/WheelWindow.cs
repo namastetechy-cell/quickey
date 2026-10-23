@@ -52,6 +52,7 @@ public sealed class WheelWindow : Window
     private IReadOnlyList<string> _files = [];
     private bool _clickMode;
     private int _hovered = -1;
+    private IntPtr _hwnd;
 
     public WheelWindow(OperationRegistry registry, Func<AppSettings> settings)
     {
@@ -94,6 +95,7 @@ public sealed class WheelWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        _hwnd = Handle;
         // Never steal focus from Explorer mid-drag, and stay out of Alt+Tab.
         Win32.AddExStyle(Handle, Win32.WS_EX_TOOLWINDOW | Win32.WS_EX_NOACTIVATE);
     }
@@ -146,10 +148,14 @@ public sealed class WheelWindow : Window
         Hide();
     }
 
-    /// <summary>True if a screen point is over the open wheel (drags starting there aren't file drags).</summary>
+    /// <summary>
+    /// True if a screen point is over the open wheel (drags starting there aren't file drags).
+    /// Called from the input hook thread, so it only touches the native window, never WPF state.
+    /// </summary>
     public bool Contains(Win32.POINT point)
     {
-        if (!IsOpen || !Win32.GetWindowRect(Handle, out var rect))
+        var hwnd = _hwnd;
+        if (hwnd == IntPtr.Zero || !Win32.IsWindowVisible(hwnd) || !Win32.GetWindowRect(hwnd, out var rect))
             return false;
         return point.X >= rect.Left && point.X < rect.Right && point.Y >= rect.Top && point.Y < rect.Bottom;
     }

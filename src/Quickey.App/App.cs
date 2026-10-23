@@ -91,6 +91,18 @@ public sealed class App : Application
             _tray.Notify("Quickey can't watch drags", ex.Message + " The right-click menu still works.", isError: true);
         }
 
+        // Hooks don't always survive sleep or the lock screen; reinstall them on the way back.
+        Microsoft.Win32.SystemEvents.PowerModeChanged += (_, args) =>
+        {
+            if (args.Mode == Microsoft.Win32.PowerModes.Resume)
+                _watcher.Reinstall();
+        };
+        Microsoft.Win32.SystemEvents.SessionSwitch += (_, args) =>
+        {
+            if (args.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect)
+                _watcher.Reinstall();
+        };
+
         _instance.ArgumentsReceived += args => Dispatcher.BeginInvoke(() => Handle(CommandLine.Parse(args)));
         _instance.StartListening();
         _filesBatch.Tick += (_, _) => ShowWheelForPendingFiles();

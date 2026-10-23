@@ -35,7 +35,51 @@ public static partial class Win32
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_SHOWWINDOW = 0x0040;
 
+    public const int WM_QUIT = 0x0012;
+    public const int WM_TIMER = 0x0113;
+    public const int WM_APP = 0x8000;
+    public const int SM_CXDRAG = 68;
+    public const int SM_CYDRAG = 69;
+
     public delegate IntPtr HookProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
+    }
+
+    [LibraryImport("user32.dll", EntryPoint = "GetMessageW")]
+    public static partial int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [LibraryImport("user32.dll", EntryPoint = "PostThreadMessageW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool PostThreadMessage(uint idThread, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetCurrentThreadId();
+
+    [LibraryImport("user32.dll")]
+    public static partial UIntPtr SetTimer(IntPtr hWnd, UIntPtr nIDEvent, uint uElapse, IntPtr lpTimerFunc);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool KillTimer(IntPtr hWnd, UIntPtr uIDEvent);
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetrics(int nIndex);
+
+    [LibraryImport("user32.dll")]
+    public static partial short GetAsyncKeyState(int vKey);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindowVisible(IntPtr hWnd);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct POINT
