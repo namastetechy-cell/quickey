@@ -59,7 +59,7 @@ public sealed class MetadataWindow : ChoiceWindow<MetadataChange>
         Add("Description", m => m.Description, (c, v) => c with { Description = v });
         Add("Location", m => m.Location, (c, v) => c with { Location = v }, "latitude, longitude, e.g. 12.9716, 77.5946");
 
-        var removeLocation = DialogKit.Secondary("Remove location", (_, _) => FieldNamed("Location").Box.Text = "");
+        var removeLocation = DialogKit.Secondary("Remove location", (_, _) => RemoveLocation());
         var removeAll = DialogKit.Secondary("Remove all metadata", (_, _) => RemoveAll());
         removeLocation.Margin = removeAll.Margin = new Thickness(0, 10, 8, 0);
 
@@ -83,6 +83,17 @@ public sealed class MetadataWindow : ChoiceWindow<MetadataChange>
     }
 
     internal Field FieldNamed(string label) => _fields.Single(f => f.Label == label);
+
+    /// <summary>
+    /// Marks the location for removal. Setting the box to "" isn't enough: when the photos' locations
+    /// differ the box is already empty, no change is registered, and nothing would be removed.
+    /// </summary>
+    internal void RemoveLocation()
+    {
+        var location = FieldNamed("Location");
+        location.Box.Text = "";
+        location.Changed = true;
+    }
 
     internal bool Overwrite
     {

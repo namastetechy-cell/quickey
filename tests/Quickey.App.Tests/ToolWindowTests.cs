@@ -75,7 +75,7 @@ public class ToolWindowTests : IDisposable
             Assert.Null(window.Change());
 
             window.FieldNamed("Date taken").Box.Text = "2024-05-01 14:30";
-            window.FieldNamed("Location").Box.Text = "";
+            window.RemoveLocation(); // box already empty here: must still count as a change
             window.Overwrite = true;
             change = window.Change()!;
             Assert.Equal("", change.Location);
