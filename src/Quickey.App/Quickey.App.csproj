@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- 19041 = Windows 10 2004: the floor for the share sheet APIs. -->
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <!-- Only for NotifyIcon (tray) and the Explorer-style copy/move dialogs. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Quickey</AssemblyName>
+    <RootNamespace>Quickey.App</RootNamespace>
+    <ApplicationIcon>Assets\quickey.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>Quickey.App.Program</StartupObject>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <Version>0.1.0</Version>
+    <Product>Quickey</Product>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WFAC010: DPI awareness is set in app.manifest on purpose; WPF owns the UI, WinForms is only the tray. -->
+    <NoWarn>$(NoWarn);CA1416;WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms and WPF both define Application, MessageBox, etc.; keep WinForms types fully qualified. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\quickey.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Quickey.Core\Quickey.Core.csproj" />
+  </ItemGroup>
+
+</Project>

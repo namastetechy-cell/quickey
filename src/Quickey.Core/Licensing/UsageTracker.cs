@@ -41,6 +41,16 @@ public sealed class UsageTracker(string path, TimeProvider? clock = null)
         }
     }
 
+    /// <summary>Records conversions that already happened, capped at today's allowance.</summary>
+    public void Record(int files)
+    {
+        lock (_gate)
+        {
+            var usage = Load();
+            Save(usage with { Count = Math.Min(FreeDailyConversions, usage.Count + Math.Max(0, files)) });
+        }
+    }
+
     private DateOnly Today => DateOnly.FromDateTime(_clock.GetLocalNow().DateTime);
 
     private Usage Load()

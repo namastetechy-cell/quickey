@@ -1,0 +1,63 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # only used to publish a GitHub Release when a v* tag is pushed
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
+          else { $v = "0.1.${{ github.run_number }}" }
+          "value=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        run: dotnet test tests/Quickey.Core.Tests -c Release
+
+      - name: Publish
+        run: >
+          dotnet publish src/Quickey.App -c Release -r win-x64 --self-contained
+          -p:Version=${{ steps.version.outputs.value }} -o publish
+
+      - name: Package installer
+        run: |
+          dotnet tool install -g vpk
+          vpk pack --packId Quickey --packVersion ${{ steps.version.outputs.value }} --packDir publish --mainExe Quickey.exe --packTitle Quickey --icon src/Quickey.App/Assets/quickey.ico --outputDir Releases
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Quickey-${{ steps.version.outputs.value }}
+          path: Releases/
+
+      - name: GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ${{ github.ref_name }} Releases/* --generate-notes
+
+  core-linux:
+    # The conversion engine is cross-platform; this catches regressions fast without a Windows runner.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet test tests/Quickey.Core.Tests

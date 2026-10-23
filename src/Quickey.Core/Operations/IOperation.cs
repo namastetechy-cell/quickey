@@ -18,5 +18,11 @@ public interface IOperation
 
     bool AppliesTo(IReadOnlyList<string> files);
 
+    /// <summary>
+    /// Why this operation can't run on this PC right now (e.g. "Needs Microsoft Word"), or null if it can.
+    /// The wheel still shows it, greyed out, so people learn the option exists.
+    /// </summary>
+    string? UnavailableReason => null;
+
     Task<OperationResult> RunAsync(IReadOnlyList<string> files, OperationContext context, CancellationToken cancellationToken);
 }

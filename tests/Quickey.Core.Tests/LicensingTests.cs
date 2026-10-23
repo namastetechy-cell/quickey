@@ -133,7 +133,22 @@ public class LicensingTests : IDisposable
 
         _store.Record = new LicenseRecord("KEY", "inst-1", null, _clock.GetUtcNow());
         var pro = new Entitlements(Manager(), usage);
-        Assert.True(pro.TryCharge(convert, 500));
+        Assert.True(pro.CanRun(convert, 500));
+    }
+
+    [Fact]
+    public void Charges_only_succeeded_files_and_never_past_the_allowance()
+    {
+        var usage = new UsageTracker(_temp.File("usage.json"), _clock);
+        var free = new Entitlements(Manager(), usage);
+        var convert = new StubOperation(countsTowardLimit: true);
+
+        free.Charge(convert, 4);
+        Assert.Equal(6, usage.RemainingToday);
+
+        free.Charge(convert, 50);
+        Assert.Equal(0, usage.RemainingToday);
+        Assert.Equal(UsageTracker.FreeDailyConversions, usage.UsedToday);
     }
 
     private sealed class MemoryStore : ILicenseStore
