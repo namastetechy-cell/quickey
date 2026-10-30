@@ -17,6 +17,14 @@ public enum ModifierKey
     Alt,
 }
 
+/// <summary>What to do when converting a workbook that has several sheets.</summary>
+public enum ExcelSheetsPolicy
+{
+    Ask,
+    CurrentSheet,
+    AllSheets,
+}
+
 public sealed class AppSettings
 {
     public ModifierKey ConvertKey { get; set; } = ModifierKey.Shift;
@@ -29,6 +37,8 @@ public sealed class AppSettings
     public OutputLocation OutputLocation { get; set; } = OutputLocation.SameFolder;
     public bool StartWithWindows { get; set; } = true;
     public bool ShowNotifications { get; set; } = true;
+
+    public ExcelSheetsPolicy ExcelSheets { get; set; } = ExcelSheetsPolicy.Ask;
 
     /// <summary>Base URL of the Velopack release feed. Empty disables update checks.</summary>
     public string UpdateUrl { get; set; } = "";

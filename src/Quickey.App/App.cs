@@ -83,7 +83,7 @@ public sealed class App : Application
 
         var dialogs = new Quickey.Core.Images.ImageDialogs(new CropPrompt(), new CompressPrompt(), new MetadataPrompt(), new EditPrompt());
         var registry = OperationRegistry.CreateDefault(dialogs, new Quickey.App.Text.WindowsOcr())
-            .AddRange(OfficeOperations.All())
+            .AddRange(OfficeOperations.All(new SheetPrompt(), () => _settings, RememberExcelSheets))
             .AddRange(FileActions.All());
 
         _wheel = new WheelWindow(registry, () => _settings);
@@ -204,6 +204,14 @@ public sealed class App : Application
         _settingsWindow.Show();
         _settingsWindow.Activate();
     }
+
+    /// <summary>"Don't ask again" in the sheet window. Called from Office's worker thread.</summary>
+    private void RememberExcelSheets(ExcelSheetsPolicy policy) => Dispatcher.Invoke(() =>
+    {
+        _settings.ExcelSheets = policy;
+        _settingsStore.Save(_settings);
+        Log.Info($"Excel sheets preference set to {policy}");
+    });
 
     private void SaveSettings(AppSettings settings)
     {

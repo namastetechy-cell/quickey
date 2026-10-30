@@ -14,6 +14,9 @@ them onto a wheel of options. Everything runs on your PC; nothing is uploaded.
 Tap another key mid-drag to switch wheels. **Esc** or dropping in the middle cancels. Keys are changeable
 in Settings. You can also right-click files → **Convert with Quickey** (Windows 11: *Show more options*).
 
+Excel workbooks with several sheets ask which to convert (the current sheet is the default, or pick
+all / specific sheets); "Don't ask again" and Settings make it automatic.
+
 Results are saved next to the original (or in a `Quickey` subfolder) and **never overwrite** anything:
 `photo.png` → `photo.webp`, then `photo (1).webp`, …
 

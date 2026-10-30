@@ -15,6 +15,9 @@ public partial class SettingsWindow : Window
     private readonly UsageTracker _usage;
     private readonly bool _testingBuild;
 
+    private static readonly (ExcelSheetsPolicy Policy, string Label)[] ExcelSheetChoices =
+        [(ExcelSheetsPolicy.Ask, "Ask each time"), (ExcelSheetsPolicy.CurrentSheet, "Current sheet only"), (ExcelSheetsPolicy.AllSheets, "All sheets")];
+
     public SettingsWindow(AppSettings settings, Action<AppSettings> save, LicenseManager license, UsageTracker usage, bool testingBuild)
     {
         _testingBuild = testingBuild;
@@ -32,6 +35,8 @@ public partial class SettingsWindow : Window
         ExplorerOnly.IsChecked = settings.ExplorerOnly;
         Subfolder.IsChecked = settings.OutputLocation == OutputLocation.QuickeySubfolder;
         Notifications.IsChecked = settings.ShowNotifications;
+        ExcelSheets.ItemsSource = ExcelSheetChoices.Select(c => c.Label).ToList();
+        ExcelSheets.SelectedIndex = Array.FindIndex(ExcelSheetChoices, c => c.Policy == settings.ExcelSheets);
         StartWithWindows.IsChecked = ShellIntegration.StartsWithWindows;
         ContextMenuOption.IsChecked = ShellIntegration.IsContextMenuRegistered;
 
@@ -99,6 +104,7 @@ public partial class SettingsWindow : Window
             ExplorerOnly = ExplorerOnly.IsChecked == true,
             OutputLocation = Subfolder.IsChecked == true ? OutputLocation.QuickeySubfolder : OutputLocation.SameFolder,
             ShowNotifications = Notifications.IsChecked == true,
+            ExcelSheets = ExcelSheetChoices[Math.Max(0, ExcelSheets.SelectedIndex)].Policy,
             StartWithWindows = StartWithWindows.IsChecked == true,
             UpdateUrl = _settings.UpdateUrl,
         };
