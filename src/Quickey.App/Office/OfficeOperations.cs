@@ -1,5 +1,6 @@
 using System.IO;
 using System.Runtime.InteropServices;
+using Quickey.App.Services;
 using Quickey.Core.Documents;
 using Quickey.Core.Operations;
 
@@ -110,12 +111,21 @@ public static class OfficeOperations
     private static void ConvertPdfInWord(object word, string path, string output)
     {
         using var warning = new PdfConvertWarningOff((string)Dispatch.Get(word, "Version")!);
+        // Driven by another program, Word doesn't pick its PDF Reflow converter by itself: it opened
+        // PDFs as encoded text and saved the raw PDF bytes as "Chinese" gibberish. Ask for it explicitly.
+        var pdfFormat = PdfOpenFormat(word)
+            ?? throw new InvalidOperationException("This version of Word can't convert PDFs. PDF to Word needs Word 2013 or later.");
         var documents = Dispatch.Get(word, "Documents")!;
-        // Documents.Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles)
-        var doc = Dispatch.Call(documents, "Open", path, false, false, false) ?? Dispatch.Get(word, "ActiveDocument")
+        var missing = System.Reflection.Missing.Value;
+        // Documents.Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, PasswordDocument,
+        //                PasswordTemplate, Revert, WritePasswordDocument, WritePasswordTemplate, Format)
+        var doc = Dispatch.Call(documents, "Open", path, false, false, false, missing, missing, missing, missing, missing, pdfFormat)
+            ?? Dispatch.Get(word, "ActiveDocument")
             ?? throw new InvalidOperationException("Word couldn't open this PDF.");
         try
         {
+            if (LooksLikeRawPdf(doc))
+                throw new InvalidOperationException("Word opened the PDF as plain text instead of converting it. Nothing was saved.");
             Dispatch.CallFirst(doc, ["SaveAs2", "SaveAs"], output, WdFormatDocx);
         }
         finally
@@ -123,6 +133,53 @@ public static class OfficeOperations
             Dispatch.Call(doc, "Close", 0); // wdDoNotSaveChanges: the PDF is never written to
             Marshal.FinalReleaseComObject(doc);
             Marshal.FinalReleaseComObject(documents);
+        }
+    }
+
+    /// <summary>The OpenFormat number of Word's PDF converter ("PDF Files" / PDF Reflow), or null if Word has none.</summary>
+    private static object? PdfOpenFormat(object word)
+    {
+        var converters = Dispatch.Get(word, "FileConverters")!;
+        try
+        {
+            var count = Convert.ToInt32(Dispatch.Get(converters, "Count"));
+            for (var i = 1; i <= count; i++)
+            {
+                var converter = Dispatch.Call(converters, "Item", i)!;
+                try
+                {
+                    var name = $"{Dispatch.Get(converter, "ClassName")} {Dispatch.Get(converter, "FormatName")}";
+                    if (name.Contains("PDF", StringComparison.OrdinalIgnoreCase) && Convert.ToBoolean(Dispatch.Get(converter, "CanOpen")))
+                    {
+                        Log.Info($"Using Word converter '{name.Trim()}'");
+                        return Dispatch.Get(converter, "OpenFormat");
+                    }
+                }
+                finally
+                {
+                    Marshal.FinalReleaseComObject(converter);
+                }
+            }
+            return null;
+        }
+        finally
+        {
+            Marshal.FinalReleaseComObject(converters);
+        }
+    }
+
+    /// <summary>A PDF opened as text starts with its own header; a real conversion never does.</summary>
+    private static bool LooksLikeRawPdf(object doc)
+    {
+        var content = Dispatch.Get(doc, "Content")!;
+        try
+        {
+            var text = Dispatch.Get(content, "Text") as string ?? "";
+            return text.TrimStart().StartsWith("%PDF", StringComparison.Ordinal);
+        }
+        finally
+        {
+            Marshal.FinalReleaseComObject(content);
         }
     }
 
