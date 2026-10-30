@@ -14,6 +14,7 @@ public static class Program
             .OnBeforeUninstallFastCallback(_ => ShellIntegration.RemoveAll())
             .Run();
 
+        AppPaths.MigrateFromLegacyLocation();
         using var instance = SingleInstance.TryAcquire(args);
         if (instance is null)
             return; // Already running: arguments were handed over.

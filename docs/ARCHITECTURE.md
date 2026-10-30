@@ -58,3 +58,10 @@ determined user could reset. That's an accepted trade-off for a low-friction fre
 
 Velopack. `Program.Main` runs Velopack's hooks first (and removes the registry entries on uninstall).
 When `UpdateUrl` is set in settings, Quickey checks every 6 hours, downloads quietly, and installs on quit.
+
+## Where Quickey keeps its files
+
+The app installs per user into `%LocalAppData%\Quickey` (Velopack), which the installer replaces
+wholesale. Quickey's own data (settings, license, usage, `quickey.log`, `running-version.txt`) lives
+in `%AppData%\Quickey` instead, so it survives reinstalls and can't block them. Versions up to 0.1.9
+used `%LocalAppData%\Quickey\Data`; the first start of a newer version copies that across.
