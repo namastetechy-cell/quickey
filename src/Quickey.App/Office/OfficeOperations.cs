@@ -19,7 +19,6 @@ public static class OfficeOperations
     private const int WdFormatFilteredHtml = 10;
     private const int XlTypePdf = 0;
     private const int XlOpenXmlWorkbook = 51;
-    private const int WdOpenFormatAuto = 0;
     private const int XlSheetHidden = 0;
     private const int PpSaveAsPdf = 32;
     private const int PpSaveAsOpenXmlPresentation = 24;
@@ -45,7 +44,7 @@ public static class OfficeOperations
 
         // Word's own PDF reflow: editable, best-effort layout.
         yield return new OfficeOperation("pdf.to.docx", "Word", Glyphs.Document, FileKind.Pdf, OfficeApp.Word, ".docx",
-            (app, job) => WithPdfInWord(app, job.Input, doc => doc.SaveAs2(job.NextOutput(), WdFormatDocx)));
+            (app, job) => ConvertPdfInWord(app, job.Input, job.NextOutput()));
 
         yield return new OfficeOperation("excel.to.pdf", "PDF", Glyphs.Pdf, FileKind.Excel, OfficeApp.Excel, ".pdf",
             (app, job) => WithWorkbook(app, job.Input, book => ExportSheetsToPdf(book, excelSheets, job)));
@@ -106,13 +105,25 @@ public static class OfficeOperations
     /// editable document", which a hidden instance can't show, so the conversion stalled or failed.
     /// That message is switched off for the duration and the user's own setting restored afterwards.
     /// Word also needs the document opened writable to convert it; the PDF itself is never saved over.
+    /// All calls go through <see cref="Com"/>: <c>dynamic</c> can't see SaveAs2 on a PDF-converted document.
     /// </summary>
-    private static void WithPdfInWord(object word, string path, Action<dynamic> action)
+    private static void ConvertPdfInWord(object word, string path, string output)
     {
-        using var warning = new PdfConvertWarningOff((string)((dynamic)word).Version);
-        dynamic doc = ((dynamic)word).Documents.Open(path, ConfirmConversions: false, ReadOnly: false, AddToRecentFiles: false, Visible: false, Format: WdOpenFormatAuto);
-        try { action(doc); }
-        finally { doc.Close(SaveChanges: 0); }
+        using var warning = new PdfConvertWarningOff((string)Com.Get(word, "Version")!);
+        var documents = Com.Get(word, "Documents")!;
+        // Documents.Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles)
+        var doc = Com.Call(documents, "Open", path, false, false, false) ?? Com.Get(word, "ActiveDocument")
+            ?? throw new InvalidOperationException("Word couldn't open this PDF.");
+        try
+        {
+            Com.CallFirst(doc, ["SaveAs2", "SaveAs"], output, WdFormatDocx);
+        }
+        finally
+        {
+            Com.Call(doc, "Close", 0); // wdDoNotSaveChanges: the PDF is never written to
+            Marshal.FinalReleaseComObject(doc);
+            Marshal.FinalReleaseComObject(documents);
+        }
     }
 
     private sealed class PdfConvertWarningOff : IDisposable
