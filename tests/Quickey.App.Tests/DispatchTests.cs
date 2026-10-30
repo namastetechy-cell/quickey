@@ -2,7 +2,7 @@ using Quickey.App.Office;
 
 namespace Quickey.App.Tests;
 
-public class ComTests
+public class DispatchTests
 {
     public class OldDocument
     {
@@ -21,15 +21,15 @@ public class ComTests
     public void Calls_the_newest_method_that_exists()
     {
         var modern = new NewDocument();
-        Com.CallFirst(modern, ["SaveAs2", "SaveAs"], @"C:\out.docx", 16);
+        Dispatch.CallFirst(modern, ["SaveAs2", "SaveAs"], @"C:\out.docx", 16);
         Assert.Equal(@"2:C:\out.docx|16", modern.Saved);
 
         var old = new OldDocument();
-        Com.CallFirst(old, ["SaveAs2", "SaveAs"], @"C:\out.docx", 16);
+        Dispatch.CallFirst(old, ["SaveAs2", "SaveAs"], @"C:\out.docx", 16);
         Assert.Equal(@"C:\out.docx|16", old.Saved);
     }
 
     [Fact]
     public void Reports_when_no_method_exists() =>
-        Assert.ThrowsAny<Exception>(() => Com.CallFirst(new object(), ["SaveAs2", "SaveAs"], "x", 1));
+        Assert.ThrowsAny<Exception>(() => Dispatch.CallFirst(new object(), ["SaveAs2", "SaveAs"], "x", 1));
 }

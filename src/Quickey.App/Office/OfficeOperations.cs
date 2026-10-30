@@ -105,22 +105,22 @@ public static class OfficeOperations
     /// editable document", which a hidden instance can't show, so the conversion stalled or failed.
     /// That message is switched off for the duration and the user's own setting restored afterwards.
     /// Word also needs the document opened writable to convert it; the PDF itself is never saved over.
-    /// All calls go through <see cref="Com"/>: <c>dynamic</c> can't see SaveAs2 on a PDF-converted document.
+    /// All calls go through <see cref="Dispatch"/>: <c>dynamic</c> can't see SaveAs2 on a PDF-converted document.
     /// </summary>
     private static void ConvertPdfInWord(object word, string path, string output)
     {
-        using var warning = new PdfConvertWarningOff((string)Com.Get(word, "Version")!);
-        var documents = Com.Get(word, "Documents")!;
+        using var warning = new PdfConvertWarningOff((string)Dispatch.Get(word, "Version")!);
+        var documents = Dispatch.Get(word, "Documents")!;
         // Documents.Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles)
-        var doc = Com.Call(documents, "Open", path, false, false, false) ?? Com.Get(word, "ActiveDocument")
+        var doc = Dispatch.Call(documents, "Open", path, false, false, false) ?? Dispatch.Get(word, "ActiveDocument")
             ?? throw new InvalidOperationException("Word couldn't open this PDF.");
         try
         {
-            Com.CallFirst(doc, ["SaveAs2", "SaveAs"], output, WdFormatDocx);
+            Dispatch.CallFirst(doc, ["SaveAs2", "SaveAs"], output, WdFormatDocx);
         }
         finally
         {
-            Com.Call(doc, "Close", 0); // wdDoNotSaveChanges: the PDF is never written to
+            Dispatch.Call(doc, "Close", 0); // wdDoNotSaveChanges: the PDF is never written to
             Marshal.FinalReleaseComObject(doc);
             Marshal.FinalReleaseComObject(documents);
         }

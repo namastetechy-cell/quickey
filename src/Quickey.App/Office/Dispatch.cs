@@ -9,7 +9,7 @@ namespace Quickey.App.Office;
 /// without usable type info (e.g. a document converted from PDF, where <c>dynamic</c> reported
 /// "'System.__ComObject' does not contain a definition for 'SaveAs2'").
 /// </summary>
-internal static class Com
+internal static class Dispatch
 {
     private const int UnknownName = unchecked((int)0x80020006); // DISP_E_UNKNOWNNAME
 
