@@ -140,6 +140,8 @@ public sealed class App : Application
         _ = Housekeeping();
 
         RefreshStatus();
+        if (_instance.PreviousVersion is { } previous)
+            _tray.Notify("Quickey updated", $"Now running {Log.Version} (was {previous}).");
         if (firstRun)
             OpenSettings();
         Handle(_startup);
@@ -147,6 +149,13 @@ public sealed class App : Application
 
     private void Handle(CommandLine command)
     {
+        if (command.QuitForUpdate)
+        {
+            Log.Info("A newer Quickey started; quitting so it can take over");
+            Quit();
+            return;
+        }
+
         // Launched by hand (Start menu, or again while running): show settings so something visibly happens.
         if (command.OpenSettings || (command.Files.Count == 0 && !command.Background))
             OpenSettings();
