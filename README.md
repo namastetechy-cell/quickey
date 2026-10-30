@@ -14,6 +14,7 @@ them onto a wheel of options. Everything runs on your PC; nothing is uploaded.
 Tap another key mid-drag to switch wheels. **Esc** or dropping in the middle cancels. Keys are changeable
 in Settings. You can also right-click files → **Convert with Quickey** (Windows 11: *Show more options*).
 
+Excel → CSV and Excel → Word (a table per sheet) read the workbook directly and work without Office.
 Excel workbooks with several sheets ask which to convert (the current sheet is the default, or pick
 all / specific sheets); "Don't ask again" and Settings make it automatic.
 

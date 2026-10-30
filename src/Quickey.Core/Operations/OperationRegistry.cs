@@ -32,7 +32,7 @@ public sealed class OperationRegistry
     /// (crop, compress, metadata, edit) come from the app's windows; without them, quick one-click
     /// versions are offered instead. Scanned PDFs need OCR to give text.
     /// </summary>
-    public static OperationRegistry CreateDefault(Images.ImageDialogs? dialogs = null, Text.ITextRecognizer? ocr = null)
+    public static OperationRegistry CreateDefault(Images.ImageDialogs? dialogs = null, Text.ITextRecognizer? ocr = null, Documents.SheetChooser? sheets = null)
     {
         var registry = new OperationRegistry();
         if (dialogs is not null)
@@ -45,6 +45,7 @@ public sealed class OperationRegistry
         }
         return registry
             .AddRange(Images.ImageOperations.All(quickTools: dialogs is null))
-            .AddRange(Pdf.PdfOperations.All(ocr));
+            .AddRange(Pdf.PdfOperations.All(ocr))
+            .AddRange(Documents.SpreadsheetOperations.All(sheets));
     }
 }

@@ -2,7 +2,6 @@ using System.IO;
 using System.Runtime.InteropServices;
 using Quickey.Core.Documents;
 using Quickey.Core.Operations;
-using Quickey.Core.Settings;
 
 namespace Quickey.App.Office;
 
@@ -20,7 +19,7 @@ public static class OfficeOperations
     private const int WdFormatFilteredHtml = 10;
     private const int XlTypePdf = 0;
     private const int XlOpenXmlWorkbook = 51;
-    private const int XlCsvUtf8 = 62;
+    private const int WdOpenFormatAuto = 0;
     private const int XlSheetHidden = 0;
     private const int PpSaveAsPdf = 32;
     private const int PpSaveAsOpenXmlPresentation = 24;
@@ -28,12 +27,10 @@ public static class OfficeOperations
     private const int MsoTrue = -1;
     private const int MsoFalse = 0;
 
-    /// <param name="sheets">Asks which sheets of a multi-sheet workbook to convert. Without it, only the current sheet is.</param>
-    /// <param name="settings">The live settings, for the "Excel workbooks with several sheets" preference.</param>
-    /// <param name="rememberSheets">Saves a "don't ask again" answer as the new preference.</param>
-    public static IEnumerable<IOperation> All(ISheetPrompt? sheets = null, Func<AppSettings>? settings = null, Action<ExcelSheetsPolicy>? rememberSheets = null)
+    /// <param name="sheets">Decides which sheets of a multi-sheet workbook to convert (shared with the CSV and Word conversions).</param>
+    public static IEnumerable<IOperation> All(SheetChooser? sheets = null)
     {
-        var excelSheets = new ExcelSheetPicker(sheets, settings, rememberSheets);
+        var excelSheets = new ExcelSheetPicker(sheets ?? new SheetChooser());
 
         yield return new OfficeOperation("word.to.pdf", "PDF", Glyphs.Pdf, FileKind.Word, OfficeApp.Word, ".pdf",
             (app, job) => WithDocument(app, job.Input, doc => doc.ExportAsFixedFormat(job.NextOutput(), WdExportFormatPdf)));
@@ -48,14 +45,12 @@ public static class OfficeOperations
 
         // Word's own PDF reflow: editable, best-effort layout.
         yield return new OfficeOperation("pdf.to.docx", "Word", Glyphs.Document, FileKind.Pdf, OfficeApp.Word, ".docx",
-            (app, job) => WithDocument(app, job.Input, doc => doc.SaveAs2(job.NextOutput(), WdFormatDocx)));
+            (app, job) => WithPdfInWord(app, job.Input, doc => doc.SaveAs2(job.NextOutput(), WdFormatDocx)));
 
         yield return new OfficeOperation("excel.to.pdf", "PDF", Glyphs.Pdf, FileKind.Excel, OfficeApp.Excel, ".pdf",
             (app, job) => WithWorkbook(app, job.Input, book => ExportSheetsToPdf(book, excelSheets, job)));
         yield return new OfficeOperation("excel.to.xlsx", "XLSX", Glyphs.Document, FileKind.Excel, OfficeApp.Excel, ".xlsx",
             (app, job) => WithWorkbook(app, job.Input, book => book.SaveAs(job.NextOutput(), XlOpenXmlWorkbook)));
-        yield return new OfficeOperation("excel.to.csv", "CSV", Glyphs.Text, FileKind.Excel, OfficeApp.Excel, ".csv",
-            (app, job) => WithWorkbook(app, job.Input, book => SaveSheetsAsCsv(book, excelSheets, job)));
 
         yield return new OfficeOperation("ppt.to.pdf", "PDF", Glyphs.Pdf, FileKind.PowerPoint, OfficeApp.PowerPoint, ".pdf",
             (app, job) => WithPresentation(app, job.Input, deck => deck.SaveAs(job.NextOutput(), PpSaveAsPdf)));
@@ -99,22 +94,57 @@ public static class OfficeOperations
         }
     }
 
-    /// <summary>CSV holds one sheet, so each chosen sheet becomes its own file ("Budget-January.csv" when there are several).</summary>
-    private static void SaveSheetsAsCsv(dynamic book, ExcelSheetPicker picker, OfficeJob job)
-    {
-        var (_, chosen) = picker.Pick((object)book, job);
-        foreach (var sheet in chosen)
-        {
-            sheet.Sheet.Activate(); // Excel saves the active sheet as CSV
-            book.SaveAs(job.NextOutput(chosen.Count > 1 ? "-" + SheetPlanner.FileSafe(sheet.Name) : null), XlCsvUtf8);
-        }
-    }
-
     private static void WithDocument(object word, string path, Action<dynamic> action)
     {
         dynamic doc = ((dynamic)word).Documents.Open(path, ConfirmConversions: false, ReadOnly: true, AddToRecentFiles: false, Visible: false);
         try { action(doc); }
         finally { doc.Close(SaveChanges: 0); }
+    }
+
+    /// <summary>
+    /// Opens a PDF in Word (PDF Reflow). Word normally stops on "Word will now convert your PDF to an
+    /// editable document", which a hidden instance can't show, so the conversion stalled or failed.
+    /// That message is switched off for the duration and the user's own setting restored afterwards.
+    /// Word also needs the document opened writable to convert it; the PDF itself is never saved over.
+    /// </summary>
+    private static void WithPdfInWord(object word, string path, Action<dynamic> action)
+    {
+        using var warning = new PdfConvertWarningOff((string)((dynamic)word).Version);
+        dynamic doc = ((dynamic)word).Documents.Open(path, ConfirmConversions: false, ReadOnly: false, AddToRecentFiles: false, Visible: false, Format: WdOpenFormatAuto);
+        try { action(doc); }
+        finally { doc.Close(SaveChanges: 0); }
+    }
+
+    private sealed class PdfConvertWarningOff : IDisposable
+    {
+        private const string Value = "DisableConvertPdfWarning";
+        private readonly Microsoft.Win32.RegistryKey? _key;
+        private readonly object? _previous;
+
+        public PdfConvertWarningOff(string officeVersion)
+        {
+            try
+            {
+                _key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey($@"Software\Microsoft\Office\{officeVersion}\Word\Options");
+                _previous = _key.GetValue(Value);
+                _key.SetValue(Value, 1, Microsoft.Win32.RegistryValueKind.DWord);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+            {
+                _key = null; // try anyway; DisplayAlerts is off too
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_key is null)
+                return;
+            if (_previous is null)
+                _key.DeleteValue(Value, throwOnMissingValue: false);
+            else
+                _key.SetValue(Value, _previous, Microsoft.Win32.RegistryValueKind.DWord);
+            _key.Dispose();
+        }
     }
 
     private static void WithWorkbook(object excel, string path, Action<dynamic> action)
@@ -154,8 +184,7 @@ public static class OfficeOperations
     /// <summary>Decisions that carry across the files of one batch.</summary>
     internal sealed class OfficeBatch
     {
-        public SheetChoice? SheetsForRest { get; set; }
-        public bool Cancelled { get; set; }
+        public SheetBatch Sheets { get; } = new();
     }
 
     private sealed class OfficeOperation(
@@ -184,7 +213,7 @@ public static class OfficeOperations
                     for (var i = 0; i < files.Count; i++)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (batch.Cancelled)
+                        if (batch.Sheets.Cancelled)
                         {
                             result.Skipped += files.Count - i;
                             break;

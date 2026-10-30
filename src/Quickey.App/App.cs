@@ -82,8 +82,9 @@ public sealed class App : Application
         _entitlements = new Entitlements(_license, _usage, unlimited: !Brand.IsStoreConfigured);
 
         var dialogs = new Quickey.Core.Images.ImageDialogs(new CropPrompt(), new CompressPrompt(), new MetadataPrompt(), new EditPrompt());
-        var registry = OperationRegistry.CreateDefault(dialogs, new Quickey.App.Text.WindowsOcr())
-            .AddRange(OfficeOperations.All(new SheetPrompt(), () => _settings, RememberExcelSheets))
+        var sheets = new Quickey.Core.Documents.SheetChooser(new SheetPrompt(), () => _settings, RememberExcelSheets);
+        var registry = OperationRegistry.CreateDefault(dialogs, new Quickey.App.Text.WindowsOcr(), sheets)
+            .AddRange(OfficeOperations.All(sheets))
             .AddRange(FileActions.All());
 
         _wheel = new WheelWindow(registry, () => _settings);
