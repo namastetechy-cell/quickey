@@ -1,6 +1,5 @@
 using System.IO;
 using System.Runtime.InteropServices;
-using Quickey.App.Services;
 using Quickey.Core.Documents;
 using Quickey.Core.Operations;
 
@@ -18,6 +17,7 @@ public static class OfficeOperations
     private const int WdFormatRtf = 6;
     private const int WdFormatUnicodeText = 7;
     private const int WdFormatFilteredHtml = 10;
+    private const int WdDoNotSaveChanges = 0;
     private const int XlTypePdf = 0;
     private const int XlOpenXmlWorkbook = 51;
     private const int XlSheetHidden = 0;
@@ -27,206 +27,129 @@ public static class OfficeOperations
     private const int MsoTrue = -1;
     private const int MsoFalse = 0;
 
+    private static readonly object Missing = System.Reflection.Missing.Value;
+
+    // Every Office call goes through Dispatch (IDispatch by name), never C# dynamic: on some
+    // installations dynamic can't see methods such as SaveAs2 ("'System.__ComObject' does not
+    // contain a definition for 'SaveAs2'"), while calling them by name works everywhere.
+
     /// <param name="sheets">Decides which sheets of a multi-sheet workbook to convert (shared with the CSV and Word conversions).</param>
+    /// <remarks>PDF → Word isn't here: Quickey converts PDFs itself (Quickey.Core), without Word.</remarks>
     public static IEnumerable<IOperation> All(SheetChooser? sheets = null)
     {
         var excelSheets = new ExcelSheetPicker(sheets ?? new SheetChooser());
 
         yield return new OfficeOperation("word.to.pdf", "PDF", Glyphs.Pdf, FileKind.Word, OfficeApp.Word, ".pdf",
-            (app, job) => WithDocument(app, job.Input, doc => doc.ExportAsFixedFormat(job.NextOutput(), WdExportFormatPdf)));
+            (app, job) => WithDocument(app, job.Input, doc => Dispatch.Call(doc, "ExportAsFixedFormat", job.NextOutput(), WdExportFormatPdf)));
         yield return new OfficeOperation("word.to.docx", "DOCX", Glyphs.Document, FileKind.Word, OfficeApp.Word, ".docx",
-            (app, job) => WithDocument(app, job.Input, doc => doc.SaveAs2(job.NextOutput(), WdFormatDocx)));
+            (app, job) => WithDocument(app, job.Input, doc => SaveWordAs(doc, job.NextOutput(), WdFormatDocx)));
         yield return new OfficeOperation("word.to.txt", "Text", Glyphs.Text, FileKind.Word, OfficeApp.Word, ".txt",
-            (app, job) => WithDocument(app, job.Input, doc => doc.SaveAs2(job.NextOutput(), WdFormatUnicodeText)));
+            (app, job) => WithDocument(app, job.Input, doc => SaveWordAs(doc, job.NextOutput(), WdFormatUnicodeText)));
         yield return new OfficeOperation("word.to.rtf", "RTF", Glyphs.Document, FileKind.Word, OfficeApp.Word, ".rtf",
-            (app, job) => WithDocument(app, job.Input, doc => doc.SaveAs2(job.NextOutput(), WdFormatRtf)));
+            (app, job) => WithDocument(app, job.Input, doc => SaveWordAs(doc, job.NextOutput(), WdFormatRtf)));
         yield return new OfficeOperation("word.to.html", "HTML", Glyphs.Link, FileKind.Word, OfficeApp.Word, ".html",
-            (app, job) => WithDocument(app, job.Input, doc => doc.SaveAs2(job.NextOutput(), WdFormatFilteredHtml)));
-
-        // Word's own PDF reflow: editable, best-effort layout.
-        yield return new OfficeOperation("pdf.to.docx", "Word", Glyphs.Document, FileKind.Pdf, OfficeApp.Word, ".docx",
-            (app, job) => ConvertPdfInWord(app, job.Input, job.NextOutput()));
+            (app, job) => WithDocument(app, job.Input, doc => SaveWordAs(doc, job.NextOutput(), WdFormatFilteredHtml)));
 
         yield return new OfficeOperation("excel.to.pdf", "PDF", Glyphs.Pdf, FileKind.Excel, OfficeApp.Excel, ".pdf",
             (app, job) => WithWorkbook(app, job.Input, book => ExportSheetsToPdf(book, excelSheets, job)));
         yield return new OfficeOperation("excel.to.xlsx", "XLSX", Glyphs.Document, FileKind.Excel, OfficeApp.Excel, ".xlsx",
-            (app, job) => WithWorkbook(app, job.Input, book => book.SaveAs(job.NextOutput(), XlOpenXmlWorkbook)));
+            (app, job) => WithWorkbook(app, job.Input, book => Dispatch.Call(book, "SaveAs", job.NextOutput(), XlOpenXmlWorkbook)));
 
         yield return new OfficeOperation("ppt.to.pdf", "PDF", Glyphs.Pdf, FileKind.PowerPoint, OfficeApp.PowerPoint, ".pdf",
-            (app, job) => WithPresentation(app, job.Input, deck => deck.SaveAs(job.NextOutput(), PpSaveAsPdf)));
+            (app, job) => WithPresentation(app, job.Input, deck => Dispatch.Call(deck, "SaveAs", job.NextOutput(), PpSaveAsPdf)));
         yield return new OfficeOperation("ppt.to.pptx", "PPTX", Glyphs.Document, FileKind.PowerPoint, OfficeApp.PowerPoint, ".pptx",
-            (app, job) => WithPresentation(app, job.Input, deck => deck.SaveAs(job.NextOutput(), PpSaveAsOpenXmlPresentation)));
+            (app, job) => WithPresentation(app, job.Input, deck => Dispatch.Call(deck, "SaveAs", job.NextOutput(), PpSaveAsOpenXmlPresentation)));
         // PowerPoint writes one PNG per slide into a folder named after the output path.
         yield return new OfficeOperation("ppt.to.png", "PNG slides", Glyphs.Photo, FileKind.PowerPoint, OfficeApp.PowerPoint, "",
-            (app, job) => WithPresentation(app, job.Input, deck => deck.SaveAs(job.NextOutput(), PpSaveAsPng)));
+            (app, job) => WithPresentation(app, job.Input, deck => Dispatch.Call(deck, "SaveAs", job.NextOutput(), PpSaveAsPng)));
     }
+
+    /// <summary>SaveAs2 (Word 2010+), falling back to SaveAs on older Word.</summary>
+    private static void SaveWordAs(object doc, string output, int format) =>
+        Dispatch.CallFirst(doc, ["SaveAs2", "SaveAs"], output, format);
 
     /// <summary>
     /// One PDF with the chosen sheets. A single sheet is exported directly; several are exported by
     /// hiding the others in this read-only copy (hidden sheets aren't printed). If the workbook's
     /// structure is protected and sheets can't be hidden, each chosen sheet gets its own PDF instead.
     /// </summary>
-    private static void ExportSheetsToPdf(dynamic book, ExcelSheetPicker picker, OfficeJob job)
+    private static void ExportSheetsToPdf(object book, ExcelSheetPicker picker, OfficeJob job)
     {
-        var (visible, chosen) = picker.Pick((object)book, job);
+        var (visible, chosen) = picker.Pick(book, job);
         if (chosen.Count == 0)
             return; // skipped or cancelled
         if (chosen.Count == visible.Count)
         {
-            book.ExportAsFixedFormat(XlTypePdf, job.NextOutput());
+            Dispatch.Call(book, "ExportAsFixedFormat", XlTypePdf, job.NextOutput());
             return;
         }
         if (chosen.Count == 1)
         {
-            chosen[0].Sheet.ExportAsFixedFormat(XlTypePdf, job.NextOutput());
+            Dispatch.Call(chosen[0].Sheet, "ExportAsFixedFormat", XlTypePdf, job.NextOutput());
             return;
         }
         try
         {
             foreach (var sheet in visible.Where(s => !chosen.Contains(s)))
-                sheet.Sheet.Visible = XlSheetHidden;
-            book.ExportAsFixedFormat(XlTypePdf, job.NextOutput());
+                Dispatch.Set(sheet.Sheet, "Visible", XlSheetHidden);
+            Dispatch.Call(book, "ExportAsFixedFormat", XlTypePdf, job.NextOutput());
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or System.Reflection.TargetInvocationException)
         {
             foreach (var sheet in chosen)
-                sheet.Sheet.ExportAsFixedFormat(XlTypePdf, job.NextOutput("-" + SheetPlanner.FileSafe(sheet.Name)));
+                Dispatch.Call(sheet.Sheet, "ExportAsFixedFormat", XlTypePdf, job.NextOutput("-" + SheetPlanner.FileSafe(sheet.Name)));
         }
     }
 
-    private static void WithDocument(object word, string path, Action<dynamic> action)
+    private static void WithDocument(object word, string path, Action<object> action)
     {
-        dynamic doc = ((dynamic)word).Documents.Open(path, ConfirmConversions: false, ReadOnly: true, AddToRecentFiles: false, Visible: false);
-        try { action(doc); }
-        finally { doc.Close(SaveChanges: 0); }
-    }
-
-    /// <summary>
-    /// Opens a PDF in Word (PDF Reflow). Word normally stops on "Word will now convert your PDF to an
-    /// editable document", which a hidden instance can't show, so the conversion stalled or failed.
-    /// That message is switched off for the duration and the user's own setting restored afterwards.
-    /// Word also needs the document opened writable to convert it; the PDF itself is never saved over.
-    /// All calls go through <see cref="Dispatch"/>: <c>dynamic</c> can't see SaveAs2 on a PDF-converted document.
-    /// </summary>
-    private static void ConvertPdfInWord(object word, string path, string output)
-    {
-        using var warning = new PdfConvertWarningOff((string)Dispatch.Get(word, "Version")!);
-        // Driven by another program, Word doesn't pick its PDF Reflow converter by itself: it opened
-        // PDFs as encoded text and saved the raw PDF bytes as "Chinese" gibberish. Ask for it explicitly.
-        var pdfFormat = PdfOpenFormat(word)
-            ?? throw new InvalidOperationException("This version of Word can't convert PDFs. PDF to Word needs Word 2013 or later.");
         var documents = Dispatch.Get(word, "Documents")!;
-        var missing = System.Reflection.Missing.Value;
-        // Documents.Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, PasswordDocument,
-        //                PasswordTemplate, Revert, WritePasswordDocument, WritePasswordTemplate, Format)
-        var doc = Dispatch.Call(documents, "Open", path, false, false, false, missing, missing, missing, missing, missing, pdfFormat)
-            ?? Dispatch.Get(word, "ActiveDocument")
-            ?? throw new InvalidOperationException("Word couldn't open this PDF.");
-        try
-        {
-            if (LooksLikeRawPdf(doc))
-                throw new InvalidOperationException("Word opened the PDF as plain text instead of converting it. Nothing was saved.");
-            Dispatch.CallFirst(doc, ["SaveAs2", "SaveAs"], output, WdFormatDocx);
-        }
+        // Documents.Open(FileName, ConfirmConversions, ReadOnly, AddToRecentFiles, PasswordDocument, PasswordTemplate,
+        //                Revert, WritePasswordDocument, WritePasswordTemplate, Format, Encoding, Visible)
+        var doc = Dispatch.Call(documents, "Open", path, false, true, false, Missing, Missing, Missing, Missing, Missing, Missing, Missing, false)
+            ?? throw new InvalidOperationException("Word couldn't open this document.");
+        try { action(doc); }
         finally
         {
-            Dispatch.Call(doc, "Close", 0); // wdDoNotSaveChanges: the PDF is never written to
-            Marshal.FinalReleaseComObject(doc);
-            Marshal.FinalReleaseComObject(documents);
+            Dispatch.Call(doc, "Close", WdDoNotSaveChanges);
+            Release(doc, documents);
         }
     }
 
-    /// <summary>The OpenFormat number of Word's PDF converter ("PDF Files" / PDF Reflow), or null if Word has none.</summary>
-    private static object? PdfOpenFormat(object word)
+    private static void WithWorkbook(object excel, string path, Action<object> action)
     {
-        var converters = Dispatch.Get(word, "FileConverters")!;
-        try
-        {
-            var count = Convert.ToInt32(Dispatch.Get(converters, "Count"));
-            for (var i = 1; i <= count; i++)
-            {
-                var converter = Dispatch.Call(converters, "Item", i)!;
-                try
-                {
-                    var name = $"{Dispatch.Get(converter, "ClassName")} {Dispatch.Get(converter, "FormatName")}";
-                    if (name.Contains("PDF", StringComparison.OrdinalIgnoreCase) && Convert.ToBoolean(Dispatch.Get(converter, "CanOpen")))
-                    {
-                        Log.Info($"Using Word converter '{name.Trim()}'");
-                        return Dispatch.Get(converter, "OpenFormat");
-                    }
-                }
-                finally
-                {
-                    Marshal.FinalReleaseComObject(converter);
-                }
-            }
-            return null;
-        }
-        finally
-        {
-            Marshal.FinalReleaseComObject(converters);
-        }
-    }
-
-    /// <summary>A PDF opened as text starts with its own header; a real conversion never does.</summary>
-    private static bool LooksLikeRawPdf(object doc)
-    {
-        var content = Dispatch.Get(doc, "Content")!;
-        try
-        {
-            var text = Dispatch.Get(content, "Text") as string ?? "";
-            return text.TrimStart().StartsWith("%PDF", StringComparison.Ordinal);
-        }
-        finally
-        {
-            Marshal.FinalReleaseComObject(content);
-        }
-    }
-
-    private sealed class PdfConvertWarningOff : IDisposable
-    {
-        private const string Value = "DisableConvertPdfWarning";
-        private readonly Microsoft.Win32.RegistryKey? _key;
-        private readonly object? _previous;
-
-        public PdfConvertWarningOff(string officeVersion)
-        {
-            try
-            {
-                _key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey($@"Software\Microsoft\Office\{officeVersion}\Word\Options");
-                _previous = _key.GetValue(Value);
-                _key.SetValue(Value, 1, Microsoft.Win32.RegistryValueKind.DWord);
-            }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
-            {
-                _key = null; // try anyway; DisplayAlerts is off too
-            }
-        }
-
-        public void Dispose()
-        {
-            if (_key is null)
-                return;
-            if (_previous is null)
-                _key.DeleteValue(Value, throwOnMissingValue: false);
-            else
-                _key.SetValue(Value, _previous, Microsoft.Win32.RegistryValueKind.DWord);
-            _key.Dispose();
-        }
-    }
-
-    private static void WithWorkbook(object excel, string path, Action<dynamic> action)
-    {
-        dynamic book = ((dynamic)excel).Workbooks.Open(path, UpdateLinks: 0, ReadOnly: true, AddToMru: false);
+        var workbooks = Dispatch.Get(excel, "Workbooks")!;
+        // Workbooks.Open(Filename, UpdateLinks, ReadOnly, Format, Password, WriteResPassword, IgnoreReadOnlyRecommended,
+        //                Origin, Delimiter, Editable, Notify, Converter, AddToMru)
+        var book = Dispatch.Call(workbooks, "Open", path, 0, true, Missing, Missing, Missing, Missing, Missing, Missing, Missing, Missing, Missing, false)
+            ?? throw new InvalidOperationException("Excel couldn't open this workbook.");
         try { action(book); }
-        finally { book.Close(SaveChanges: false); }
+        finally
+        {
+            Dispatch.Call(book, "Close", false);
+            Release(book, workbooks);
+        }
     }
 
-    private static void WithPresentation(object powerPoint, string path, Action<dynamic> action)
+    private static void WithPresentation(object powerPoint, string path, Action<object> action)
     {
-        dynamic deck = ((dynamic)powerPoint).Presentations.Open(path, ReadOnly: MsoTrue, Untitled: MsoFalse, WithWindow: MsoFalse);
+        var presentations = Dispatch.Get(powerPoint, "Presentations")!;
+        // Presentations.Open(FileName, ReadOnly, Untitled, WithWindow)
+        var deck = Dispatch.Call(presentations, "Open", path, MsoTrue, MsoFalse, MsoFalse)
+            ?? throw new InvalidOperationException("PowerPoint couldn't open this presentation.");
         try { action(deck); }
-        finally { deck.Close(); }
+        finally
+        {
+            Dispatch.Call(deck, "Close");
+            Release(deck, presentations);
+        }
+    }
+
+    private static void Release(params object[] comObjects)
+    {
+        foreach (var comObject in comObjects)
+            if (Marshal.IsComObject(comObject))
+                Marshal.FinalReleaseComObject(comObject);
     }
 
     /// <summary>One file in a batch: where it is, where its outputs go, and what the user decided for it.</summary>

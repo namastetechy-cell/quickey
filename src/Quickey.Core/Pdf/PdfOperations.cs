@@ -14,6 +14,7 @@ public static class PdfOperations
         yield return new PdfToImagesOperation(ImageTarget.Png);
         yield return new PdfToImagesOperation(ImageTarget.Jpg);
         yield return new PdfToTextOperation(ocr);
+        yield return new Documents.PdfToWordOperation(ocr);
         yield return new MergePdfOperation();
         yield return new SplitPdfOperation();
         yield return new RotatePdfOperation();

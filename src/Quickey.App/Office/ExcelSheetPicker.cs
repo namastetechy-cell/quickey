@@ -7,23 +7,23 @@ internal sealed class ExcelSheetPicker(SheetChooser chooser)
 {
     private const int XlSheetVisible = -1;
 
-    public sealed record SheetRef(string Name, dynamic Sheet);
+    public sealed record SheetRef(string Name, object Sheet);
 
     /// <returns>All visible sheets, and those to convert (empty if the user cancelled).</returns>
     public (IReadOnlyList<SheetRef> Visible, IReadOnlyList<SheetRef> Chosen) Pick(object workbook, OfficeOperations.OfficeJob job)
     {
-        dynamic book = workbook;
         var visible = new List<SheetRef>();
-        int count = book.Sheets.Count;
+        var sheets = Dispatch.Get(workbook, "Sheets")!;
+        var count = Convert.ToInt32(Dispatch.Get(sheets, "Count"));
         for (var i = 1; i <= count; i++)
         {
-            dynamic sheet = book.Sheets.Item(i);
-            if ((int)sheet.Visible == XlSheetVisible)
-                visible.Add(new SheetRef((string)sheet.Name, sheet));
+            var sheet = Dispatch.Call(sheets, "Item", i)!;
+            if (Convert.ToInt32(Dispatch.Get(sheet, "Visible")) == XlSheetVisible)
+                visible.Add(new SheetRef((string)Dispatch.Get(sheet, "Name")!, sheet));
         }
 
         string? current = null;
-        try { current = (string)book.ActiveSheet.Name; }
+        try { current = Dispatch.Get(Dispatch.Get(workbook, "ActiveSheet")!, "Name") as string; }
         catch (Exception) { /* no active sheet recorded: the chooser falls back to the first */ }
 
         // Runs on Office's worker thread; the sheet window lives on the UI thread, which stays free.

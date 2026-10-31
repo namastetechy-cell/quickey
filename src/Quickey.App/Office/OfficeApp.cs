@@ -27,15 +27,15 @@ internal sealed class OfficeApp(string progId, string displayName, object alerts
             await StaWorker.Run<object?>(() =>
             {
                 var type = Type.GetTypeFromProgID(progId) ?? throw new InvalidOperationException(UnavailableReason);
-                dynamic app = Activator.CreateInstance(type)!;
+                var app = Activator.CreateInstance(type)!;
                 try
                 {
-                    app.DisplayAlerts = (dynamic)alertsOff;
-                    work((object)app);
+                    Dispatch.Set(app, "DisplayAlerts", alertsOff);
+                    work(app);
                 }
                 finally
                 {
-                    try { app.Quit(); } catch (COMException) { }
+                    try { Dispatch.Call(app, "Quit"); } catch (Exception ex) when (ex is COMException or System.Reflection.TargetInvocationException) { }
                     Marshal.FinalReleaseComObject(app);
                 }
                 return null;
