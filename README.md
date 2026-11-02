@@ -8,7 +8,7 @@ them onto a wheel of options. Everything runs on your PC; nothing is uploaded.
 | Key (default) | Wheel   | What's on it |
 |---------------|---------|--------------|
 | **Shift**     | Convert | Images ↔ PNG, JPG, WebP, AVIF, GIF, BMP, TIFF, ICO, PDF · PDF → PNG, JPG, text, Word · Word/Excel/PowerPoint → PDF, DOCX, XLSX, CSV, PPTX, PNG slides… |
-| **Ctrl**      | Tools   | Resize 50%, fit 1920, compress, rotate, trim, square crop, strip metadata, combine images into PDF · PDF merge, split, rotate, compress |
+| **Ctrl**      | Tools   | Portal photo (passport 3.5 × 4.5 cm, photo 200 × 230 px, signature 140 × 60 px, or custom size + KB limits), Resize 50%, fit 1920, compress, rotate, trim, square crop, strip metadata, combine images into PDF · PDF merge, split, rotate, compress |
 | **Alt**       | Actions | Copy path, copy name, copy image, copy to…, move to…, open terminal here, share |
 
 Tap another key mid-drag to switch wheels. **Esc** or dropping in the middle cancels. Keys are changeable

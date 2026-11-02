@@ -22,4 +22,5 @@ public static class Glyphs
     public const string Share = "";
     public const string Tag = "\uE8EC";
     public const string Sliders = "\uE9E9";
+    public const string Contact = "\uE77B";
 }

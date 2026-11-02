@@ -34,7 +34,7 @@ public class WheelWindowTests : IDisposable
 
     private static WheelWindow NewWheel()
     {
-        var dialogs = new Quickey.Core.Images.ImageDialogs(new CropPrompt(), new CompressPrompt(), new MetadataPrompt(), new EditPrompt());
+        var dialogs = new Quickey.Core.Images.ImageDialogs(new CropPrompt(), new CompressPrompt(), new MetadataPrompt(), new EditPrompt(), new PortalPrompt());
         var registry = OperationRegistry.CreateDefault(dialogs).AddRange(OfficeOperations.All()).AddRange(FileActions.All());
         var settings = new AppSettings();
         return new WheelWindow(registry, () => settings);
@@ -72,6 +72,7 @@ public class WheelWindowTests : IDisposable
                 wheel.ShowForDrag(OperationCategory.Tools, Cursor); // modifier tapped mid-drag
                 Assert.Contains(wheel.Wedges, o => o.Id == "image.compress");
                 Assert.Contains(wheel.Wedges, o => o.Id == "image.crop");
+                Assert.Contains(wheel.Wedges, o => o.Id == "image.portal");
                 Assert.Contains(wheel.Wedges, o => o.Id == "image.edit");
                 Assert.Contains(wheel.Wedges, o => o.Id == "image.metadata");
 

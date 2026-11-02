@@ -39,6 +39,8 @@ public sealed class OperationRegistry
         {
             // Registration order is wheel order: the most-used tools come first.
             registry.Add(new Images.CompressImagesOperation(dialogs.Compress));
+            if (dialogs.Portal is not null)
+                registry.Add(new Images.PortalPhotoOperation(dialogs.Portal));
             registry.Add(new Images.CropImageOperation(dialogs.Crop));
             registry.Add(new Images.EditPhotoOperation(dialogs.Edit));
             registry.Add(new Images.EditMetadataOperation(dialogs.Metadata));

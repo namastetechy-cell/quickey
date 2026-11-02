@@ -145,7 +145,7 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
         {
             int ColumnOf(Letter letter)
             {
-                var x = (letter.GlyphRectangle.Left + letter.GlyphRectangle.Right) / 2;
+                var x = (letter.BoundingBox.Left + letter.BoundingBox.Right) / 2;
                 for (var c = 0; c < Columns.Count - 1; c++)
                     if (x <= Columns[c + 1])
                         return c;

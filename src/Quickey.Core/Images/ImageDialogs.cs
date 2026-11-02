@@ -19,7 +19,7 @@ public interface IPhotoEditPrompt
 }
 
 /// <summary>The windows the Windows app provides for the image tools that need choices.</summary>
-public sealed record ImageDialogs(ICropPrompt Crop, ICompressPrompt Compress, IMetadataPrompt Metadata, IPhotoEditPrompt Edit);
+public sealed record ImageDialogs(ICropPrompt Crop, ICompressPrompt Compress, IMetadataPrompt Metadata, IPhotoEditPrompt Edit, IPortalPrompt? Portal = null);
 
 /// <summary>Base for tools that ask once, then process each image with the answer.</summary>
 public abstract class DialogImageOperation<TChoice> : IOperation where TChoice : class
