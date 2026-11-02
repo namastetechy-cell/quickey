@@ -22,6 +22,20 @@ internal sealed class PdfBuilder
         return this;
     }
 
+    /// <summary>A stroked line, as a table border.</summary>
+    public PdfBuilder Line(double x1, double y1, double x2, double y2)
+    {
+        _content.Append($"0.5 w {x1} {y1} m {x2} {y2} l S\n");
+        return this;
+    }
+
+    /// <summary>A thin filled rectangle: how Excel often draws cell borders.</summary>
+    public PdfBuilder Bar(double x, double y, double width, double height)
+    {
+        _content.Append($"{x} {y} {width} {height} re f\n");
+        return this;
+    }
+
     public PdfBuilder Jpeg(byte[] jpeg, int pixelWidth, int pixelHeight, double x, double y, double width, double height)
     {
         var name = $"Im{_images.Count + 1}";

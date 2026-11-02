@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml.Wordprocessing;
 using Quickey.Core.Operations;
 using Quickey.Core.Text;
 using UglyToad.PdfPig.Content;
+using UglyToad.PdfPig.Core;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.WordExtractor;
 using A = DocumentFormat.OpenXml.Drawing;
 using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
@@ -42,6 +43,7 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
             var main = document.AddMainDocumentPart();
             var body = new Body();
             main.Document = new Document(body);
+            WordDefaults.Apply(main);
             var writer = new Writer(main, body);
 
             Page? first = null;
@@ -101,6 +103,154 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
         }
     }
 
+    /// <summary>A horizontal or vertical stroke on the page (a table border).</summary>
+    internal readonly record struct Segment(bool Vertical, double At, double From, double To);
+
+    /// <summary>
+    /// A table drawn with grid lines, as Excel and most reports do. Its rows and columns come from
+    /// the lines themselves, so touching cells ("name" right against "age") and empty cells are exact.
+    /// </summary>
+    internal sealed record RuledTable(IReadOnlyList<double> Columns, IReadOnlyList<double> Rows)
+    {
+        /// <summary>Column edges, left to right.</summary>
+        public IReadOnlyList<double> Columns { get; } = Columns;
+
+        /// <summary>Row edges, top to bottom (PDF y decreases downwards).</summary>
+        public IReadOnlyList<double> Rows { get; } = Rows;
+
+        public double Top => Rows[0];
+
+        public bool Contains(Word word)
+        {
+            var (x, y) = Center(word);
+            return x >= Columns[0] && x <= Columns[^1] && y <= Rows[0] && y >= Rows[^1];
+        }
+
+        public (int Row, int Column)? CellOf(Word word)
+        {
+            var (x, y) = Center(word);
+            for (var r = 0; r < Rows.Count - 1; r++)
+                if (y <= Rows[r] && y >= Rows[r + 1])
+                    for (var c = 0; c < Columns.Count - 1; c++)
+                        if (x >= Columns[c] && x <= Columns[c + 1])
+                            return (r, c);
+            return null;
+        }
+
+        /// <summary>
+        /// Splits a word that straddles a column line into one word per cell. PDFs often have no
+        /// space between touching cells, so "name" and "age" arrive as the single word "nameage".
+        /// </summary>
+        public IEnumerable<Word> SplitAtColumns(Word word)
+        {
+            int ColumnOf(Letter letter)
+            {
+                var x = (letter.GlyphRectangle.Left + letter.GlyphRectangle.Right) / 2;
+                for (var c = 0; c < Columns.Count - 1; c++)
+                    if (x <= Columns[c + 1])
+                        return c;
+                return Columns.Count - 2;
+            }
+
+            var groups = new List<List<Letter>>();
+            var previous = -1;
+            foreach (var letter in word.Letters)
+            {
+                var column = ColumnOf(letter);
+                if (column != previous || groups.Count == 0)
+                    groups.Add([]);
+                groups[^1].Add(letter);
+                previous = column;
+            }
+            return groups.Count == 1 ? [word] : groups.Select(g => new Word(g));
+        }
+
+        private static (double X, double Y) Center(Word word) =>
+            ((word.BoundingBox.Left + word.BoundingBox.Right) / 2, (word.BoundingBox.Bottom + word.BoundingBox.Top) / 2);
+    }
+
+    /// <summary>Thin rectangles and axis-aligned lines in the page's drawing, as segments.</summary>
+    internal static List<Segment> Segments(Page page)
+    {
+        const double thin = 2.5, minimum = 3;
+        var segments = new List<Segment>();
+        foreach (var path in page.Paths)
+        foreach (var subpath in path)
+        {
+            if (subpath.GetBoundingRectangle() is not { } box)
+                continue;
+            if (box.Width <= thin && box.Height > minimum)
+                segments.Add(new Segment(true, (box.Left + box.Right) / 2, box.Bottom, box.Top));
+            else if (box.Height <= thin && box.Width > minimum)
+                segments.Add(new Segment(false, (box.Bottom + box.Top) / 2, box.Left, box.Right));
+            else if (subpath.IsDrawnAsRectangle)
+            {
+                // A stroked cell outline (or a shaded cell): its four edges.
+                segments.Add(new Segment(true, box.Left, box.Bottom, box.Top));
+                segments.Add(new Segment(true, box.Right, box.Bottom, box.Top));
+                segments.Add(new Segment(false, box.Top, box.Left, box.Right));
+                segments.Add(new Segment(false, box.Bottom, box.Left, box.Right));
+            }
+            else
+            {
+                foreach (var command in subpath.Commands)
+                    if (command is PdfSubpath.Line line)
+                    {
+                        if (Math.Abs(line.From.X - line.To.X) <= 0.5 && Math.Abs(line.From.Y - line.To.Y) > minimum)
+                            segments.Add(new Segment(true, line.From.X, Math.Min(line.From.Y, line.To.Y), Math.Max(line.From.Y, line.To.Y)));
+                        else if (Math.Abs(line.From.Y - line.To.Y) <= 0.5 && Math.Abs(line.From.X - line.To.X) > minimum)
+                            segments.Add(new Segment(false, line.From.Y, Math.Min(line.From.X, line.To.X), Math.Max(line.From.X, line.To.X)));
+                    }
+            }
+        }
+        return segments;
+    }
+
+    /// <summary>
+    /// Groups touching segments into grids; a grid with at least two rows and two columns is a table.
+    /// </summary>
+    internal static List<RuledTable> RuledTables(IReadOnlyList<Segment> segments)
+    {
+        const double tolerance = 2;
+        var parent = Enumerable.Range(0, segments.Count).ToArray();
+        int Find(int i) => parent[i] == i ? i : parent[i] = Find(parent[i]);
+
+        static bool Touch(Segment a, Segment b)
+        {
+            if (a.Vertical == b.Vertical)
+                return Math.Abs(a.At - b.At) <= tolerance && a.From <= b.To + tolerance && b.From <= a.To + tolerance;
+            var (v, h) = a.Vertical ? (a, b) : (b, a);
+            return v.At >= h.From - tolerance && v.At <= h.To + tolerance && h.At >= v.From - tolerance && h.At <= v.To + tolerance;
+        }
+
+        for (var i = 0; i < segments.Count; i++)
+            for (var j = i + 1; j < segments.Count; j++)
+                if (Touch(segments[i], segments[j]))
+                    parent[Find(i)] = Find(j);
+
+        var tables = new List<RuledTable>();
+        foreach (var group in Enumerable.Range(0, segments.Count).GroupBy(Find))
+        {
+            var members = group.Select(i => segments[i]).ToList();
+            var columns = Cluster(members.Where(s => s.Vertical).Select(s => s.At), tolerance);
+            var rows = Cluster(members.Where(s => !s.Vertical).Select(s => s.At), tolerance);
+            rows.Reverse();
+            if (columns.Count >= 3 && rows.Count >= 3)
+                tables.Add(new RuledTable(columns, rows));
+        }
+        return tables.OrderByDescending(t => t.Top).ToList();
+    }
+
+    /// <summary>Sorted positions with near-duplicates (within <paramref name="tolerance"/>) merged.</summary>
+    private static List<double> Cluster(IEnumerable<double> values, double tolerance)
+    {
+        var result = new List<double>();
+        foreach (var value in values.Order())
+            if (result.Count == 0 || value - result[^1] > tolerance)
+                result.Add(value);
+        return result;
+    }
+
     /// <summary>
     /// Column ranges shared by a run of table rows: horizontal extents of all cells, merged where
     /// they overlap. Overlap (rather than left edges) also lines up right-aligned numbers.
@@ -151,8 +301,26 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
         return lines.Select(l => new PageLine(l.OrderBy(w => w.BoundingBox.Left).ToList())).ToList();
     }
 
-    private static void WritePage(Writer writer, Page page, IReadOnlyList<Word> words)
+    private static void WritePage(Writer writer, Page page, IReadOnlyList<Word> allWords)
     {
+        var ruled = RuledTables(Segments(page));
+        var tableWords = ruled.ToDictionary(t => t, t => allWords.Where(t.Contains).SelectMany(t.SplitAtColumns).ToList());
+        var words = allWords.Where(w => !ruled.Any(t => t.Contains(w))).ToList();
+        var nextRuled = 0;
+        void RuledTablesAbove(double y)
+        {
+            while (nextRuled < ruled.Count && ruled[nextRuled].Top >= y)
+            {
+                var table = ruled[nextRuled++];
+                writer.RuledTable(table, tableWords[table]);
+            }
+        }
+
+        if (words.Count == 0)
+        {
+            RuledTablesAbove(double.MinValue);
+            return;
+        }
         var lines = Lines(words);
         var bodySize = Median(words.SelectMany(w => w.Letters).Select(l => l.PointSize));
         var textWidth = lines.Max(l => l.Right) - lines.Min(l => l.Left);
@@ -164,6 +332,15 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
         for (var i = 0; i < lines.Count; i++)
         {
             var line = lines[i];
+            if (nextRuled < ruled.Count && ruled[nextRuled].Top >= line.Top)
+            {
+                if (paragraph.Count > 0)
+                {
+                    writer.Paragraph(paragraph, bodySize, textWidth);
+                    paragraph.Clear();
+                }
+                RuledTablesAbove(line.Top);
+            }
             var tableRows = TableRowCount(lines, i);
             if (tableRows > 0)
             {
@@ -190,6 +367,7 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
         }
         if (paragraph.Count > 0)
             writer.Paragraph(paragraph, bodySize, textWidth);
+        RuledTablesAbove(double.MinValue);
         while (nextImage < images.Count)
             writer.Image(images[nextImage++], page.Width);
     }
@@ -267,17 +445,79 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
             body.Append(paragraph);
         }
 
-        /// <summary>A real Word table: one row per line, cells placed in the shared column ranges.</summary>
-        public void Table(IReadOnlyList<PageLine> rows)
+        /// <summary>A table from the PDF's own grid lines: one Word cell per drawn cell, same widths.</summary>
+        public void RuledTable(RuledTable ruled, IReadOnlyList<Word> words)
+        {
+            var columnCount = ruled.Columns.Count - 1;
+            var cells = new List<Word>[ruled.Rows.Count - 1, columnCount];
+            foreach (var word in words)
+                if (ruled.CellOf(word) is var (row, column))
+                    (cells[row, column] ??= []).Add(word);
+
+            // The drawn grid, widened where a cell's text needs more room once Word's padding is added
+            // (exact PDF widths made Word wrap "name" as "nam/e").
+            var widths = Enumerable.Range(0, columnCount)
+                .Select(c => Math.Max(ruled.Columns[c + 1] - ruled.Columns[c],
+                    Enumerable.Range(0, ruled.Rows.Count - 1).Select(r => TextWidth(cells[r, c])).DefaultIfEmpty(0).Max() + CellPadding))
+                .ToList();
+            var table = NewTable(widths);
+
+            for (var r = 0; r < ruled.Rows.Count - 1; r++)
+            {
+                var row = new TableRow();
+                for (var c = 0; c < widths.Count; c++)
+                    row.Append(Cell(cells[r, c], widths[c]));
+                table.Append(row);
+            }
+            body.Append(table, new Paragraph(Spacing()));
+        }
+
+        /// <summary>Room for Word's cell padding (both sides) and rounding, in points.</summary>
+        private const double CellPadding = 9;
+
+        /// <summary>Width of a cell's widest line of text in the PDF, in points.</summary>
+        private static double TextWidth(IReadOnlyList<Word>? words) =>
+            words is null || words.Count == 0 ? 0 : Lines(words).Max(l => l.Right - l.Left);
+
+        /// <summary>A table with explicit column widths (points), tight padding and a light grid.</summary>
+        private static Table NewTable(IReadOnlyList<double> widthsInPoints)
         {
             static T Line<T>() where T : BorderType, new() => new() { Val = BorderValues.Single, Size = 4U, Color = "A6A6A6" };
 
-            var columns = Columns(rows);
             var table = new Table(new TableProperties(
-                new TableWidth { Type = TableWidthUnitValues.Auto, Width = "0" },
+                new TableWidth { Type = TableWidthUnitValues.Dxa, Width = ((int)(widthsInPoints.Sum() * 20)).ToString() },
+                new TableBorders(Line<TopBorder>(), Line<BottomBorder>(), Line<LeftBorder>(), Line<RightBorder>(), Line<InsideHorizontalBorder>(), Line<InsideVerticalBorder>()),
                 new TableLayout { Type = TableLayoutValues.Autofit },
-                new TableBorders(Line<TopBorder>(), Line<BottomBorder>(), Line<LeftBorder>(), Line<RightBorder>(), Line<InsideHorizontalBorder>(), Line<InsideVerticalBorder>())));
-            table.Append(new TableGrid(columns.Select(c => new GridColumn { Width = ((int)((c.Right - c.Left + 12) * 20)).ToString() })));
+                WordDefaults.TightCellMargins()));
+            table.Append(new TableGrid(widthsInPoints.Select(w => new GridColumn { Width = ((int)(w * 20)).ToString() })));
+            return table;
+        }
+
+        /// <summary>One cell with its width set (Word mis-sizes columns whose cells have none); words in reading order.</summary>
+        private static TableCell Cell(IReadOnlyList<Word>? words, double widthInPoints)
+        {
+            var paragraph = new Paragraph(new ParagraphProperties(new SpacingBetweenLines { After = "0", Before = "0" }));
+            if (words is not null)
+            {
+                var lines = Lines(words);
+                for (var l = 0; l < lines.Count; l++)
+                {
+                    if (l > 0)
+                        paragraph.Append(new Run(new WordText(" ") { Space = SpaceProcessingModeValues.Preserve }));
+                    for (var w = 0; w < lines[l].Words.Count; w++)
+                        paragraph.Append(WordRun((w == 0 ? "" : " ") + lines[l].Words[w].Text, lines[l].Words[w], heading: false));
+                }
+            }
+            return new TableCell(new TableCellProperties(new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = ((int)(widthInPoints * 20)).ToString() }), paragraph);
+        }
+
+        /// <summary>A real Word table: one row per line, cells placed in the shared column ranges.</summary>
+        public void Table(IReadOnlyList<PageLine> rows)
+        {
+            var columns = Columns(rows);
+            // Text-only tables have no drawn edges: each column spans to the next one, and always fits its text.
+            var widths = columns.Select((c, i) => Math.Max((i + 1 < columns.Count ? columns[i + 1].Left : c.Right + 6) - c.Left, c.Right - c.Left + CellPadding)).ToList();
+            var table = NewTable(widths);
 
             foreach (var row in rows)
             {
@@ -292,14 +532,8 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
                 }
 
                 var tableRow = new TableRow();
-                foreach (var words in cells)
-                {
-                    var paragraph = new Paragraph(new ParagraphProperties(new SpacingBetweenLines { After = "0", Before = "0" }));
-                    if (words is not null)
-                        for (var w = 0; w < words.Count; w++)
-                            paragraph.Append(WordRun((w == 0 ? "" : " ") + words[w].Text, words[w], heading: false));
-                    tableRow.Append(new TableCell(paragraph));
-                }
+                for (var c = 0; c < cells.Length; c++)
+                    tableRow.Append(Cell(cells[c], widths[c]));
                 table.Append(tableRow);
             }
             body.Append(table, new Paragraph(Spacing()));

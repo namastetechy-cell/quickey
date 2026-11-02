@@ -107,6 +107,7 @@ public class SpreadsheetTests : IDisposable
         Assert.NotNull(tables[1].Elements<TableRow>().First().TableRowProperties?.GetFirstChild<TableHeader>());
         Assert.Contains("January", body.InnerText); // sheet headings
         Assert.Equal(1, prompt.Asked);
+        Assert.NotNull(document.MainDocumentPart.DocumentSettingsPart); // not opened in Compatibility Mode
     }
 
     [Fact]

@@ -104,6 +104,60 @@ public class PdfToWordTests : IDisposable
             Cells(table));
     }
 
+    /// <summary>
+    /// The user's Excel export: narrow columns where "name" and "age" nearly touch, an empty middle
+    /// column, and cell borders drawn as grid lines (or thin bars).
+    /// </summary>
+    private string ExcelGrid(bool asBars)
+    {
+        var path = _temp.File(asBars ? "grid-bars.pdf" : "grid-lines.pdf");
+        double[] xs = [52, 79.6, 96.8, 112];
+        double[] ys = [790, 774, 758, 742];
+        var pdf = new PdfBuilder()
+            .Text(54, 777, "name").Text(80.4, 777, "age")
+            .Text(54, 761, "r").Text(98, 761, "21")
+            .Text(54, 745, "v").Text(98, 745, "21");
+        foreach (var x in xs)
+            if (asBars) pdf.Bar(x - 0.25, ys[^1], 0.5, ys[0] - ys[^1]); else pdf.Line(x, ys[^1], x, ys[0]);
+        foreach (var y in ys)
+            if (asBars) pdf.Bar(xs[0], y - 0.25, xs[^1] - xs[0], 0.5); else pdf.Line(xs[0], y, xs[^1], y);
+        pdf.Save(path);
+        return path;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Grid_lines_define_the_table_even_when_cells_touch(bool asBars)
+    {
+        using var docx = await Convert(ExcelGrid(asBars));
+
+        var table = Assert.Single(docx.MainDocumentPart!.Document!.Body!.Elements<Table>());
+        Assert.Equal([["name", "age", ""], ["r", "", "21"], ["v", "", "21"]], Cells(table));
+    }
+
+    [Fact]
+    public async Task Every_cell_has_a_width_that_fits_its_text()
+    {
+        using var docx = await Convert(ExcelGrid(asBars: false));
+
+        var table = docx.MainDocumentPart!.Document!.Body!.Elements<Table>().Single();
+        Assert.All(table.Descendants<TableCell>(), c => Assert.NotNull(c.TableCellProperties?.TableCellWidth));
+        // "name" is ~23pt wide in the PDF; with padding its column must be wider than that, or Word wraps it.
+        var first = int.Parse(table.GetFirstChild<TableGrid>()!.Elements<GridColumn>().First().Width!.Value!);
+        Assert.True(first >= 30 * 20, $"first column {first} twips");
+    }
+
+    [Fact]
+    public async Task Documents_open_in_modern_word_mode_with_calibri()
+    {
+        using var docx = await Convert(ExcelGrid(asBars: false));
+
+        var compat = docx.MainDocumentPart!.DocumentSettingsPart!.Settings!.Descendants<CompatibilitySetting>().Single();
+        Assert.Equal("15", compat.Val!.Value);
+        Assert.Equal("Calibri", docx.MainDocumentPart.StyleDefinitionsPart!.Styles!.Descendants<RunFonts>().First().Ascii!.Value);
+    }
+
     [Fact]
     public async Task A_lone_label_and_value_line_stays_a_tabbed_paragraph()
     {

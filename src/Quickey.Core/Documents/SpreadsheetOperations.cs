@@ -123,7 +123,9 @@ public sealed class SpreadsheetToWordOperation(SheetChooser sheets) : Spreadshee
         using (var document = WordprocessingDocument.Create(output, WordprocessingDocumentType.Document))
         {
             var body = new Body();
-            document.AddMainDocumentPart().Document = new Document(body);
+            var main = document.AddMainDocumentPart();
+            main.Document = new Document(body);
+            WordDefaults.Apply(main);
             var widest = sheets.Max(s => s.ColumnCount);
             var fontHalfPoints = widest > 12 ? "14" : widest > 8 ? "16" : "20";
 
