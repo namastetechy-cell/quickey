@@ -17,7 +17,7 @@ internal sealed class ExcelSheetPicker(SheetChooser chooser)
         var count = Convert.ToInt32(Dispatch.Get(sheets, "Count"));
         for (var i = 1; i <= count; i++)
         {
-            var sheet = Dispatch.Call(sheets, "Item", i)!;
+            var sheet = Dispatch.Get(sheets, "Item", i)!;
             if (Convert.ToInt32(Dispatch.Get(sheet, "Visible")) == XlSheetVisible)
                 visible.Add(new SheetRef((string)Dispatch.Get(sheet, "Name")!, sheet));
         }

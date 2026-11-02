@@ -30,6 +30,10 @@ public class DispatchTests
     }
 
     [Fact]
+    public void Reads_indexed_properties_like_Sheets_Item() =>
+        Assert.Equal("b", Dispatch.Get(new List<string> { "a", "b" }, "Item", 1));
+
+    [Fact]
     public void Reports_when_no_method_exists() =>
         Assert.ThrowsAny<Exception>(() => Dispatch.CallFirst(new object(), ["SaveAs2", "SaveAs"], "x", 1));
 }

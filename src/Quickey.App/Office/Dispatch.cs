@@ -15,6 +15,12 @@ internal static class Dispatch
 
     public static object? Get(object target, string property) => Invoke(target, property, BindingFlags.GetProperty, null);
 
+    /// <summary>
+    /// A parameterised property such as <c>Sheets.Item(1)</c>. In Office, Item is a property, not a
+    /// method: calling it as a method fails with DISP_E_MEMBERNOTFOUND.
+    /// </summary>
+    public static object? Get(object target, string property, params object?[] index) => Invoke(target, property, BindingFlags.GetProperty, index);
+
     public static void Set(object target, string property, object? value) => Invoke(target, property, BindingFlags.SetProperty, [value]);
 
     public static object? Call(object target, string method, params object?[] args) => Invoke(target, method, BindingFlags.InvokeMethod, args);

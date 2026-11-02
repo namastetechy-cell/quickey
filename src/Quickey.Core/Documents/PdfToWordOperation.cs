@@ -15,7 +15,8 @@ namespace Quickey.Core.Documents;
 /// <summary>
 /// PDF → editable Word document, without Word. Text is grouped into lines and paragraphs top to bottom,
 /// keeping headings, bold, italic and font sizes; images are placed where they appear; wide gaps
-/// in a line (columns of a table or form) become tabs with matching tab stops. Pages without a text layer (scans) are read
+/// in a line split it into columns: runs of such lines become real Word tables, a lone label/value
+/// line keeps tabs with matching tab stops. Pages without a text layer (scans) are read
 /// with OCR when available, otherwise inserted as a picture so nothing is lost. Layout is
 /// approximated, not reproduced exactly: this is for editing the content.
 /// </summary>
@@ -80,6 +81,54 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
             index > 0 && Words[index].BoundingBox.Left - Words[index - 1].BoundingBox.Right > WordSize(Words[index]) * 1.5;
 
         public bool HasColumns => Enumerable.Range(1, Words.Count - 1).Any(IsColumnBreakBefore);
+
+        /// <summary>The line split at its column breaks: each cell is a run of words.</summary>
+        public IReadOnlyList<IReadOnlyList<Word>> Cells()
+        {
+            var cells = new List<IReadOnlyList<Word>>();
+            var current = new List<Word>();
+            for (var i = 0; i < Words.Count; i++)
+            {
+                if (IsColumnBreakBefore(i))
+                {
+                    cells.Add(current);
+                    current = [];
+                }
+                current.Add(Words[i]);
+            }
+            cells.Add(current);
+            return cells;
+        }
+    }
+
+    /// <summary>
+    /// Column ranges shared by a run of table rows: horizontal extents of all cells, merged where
+    /// they overlap. Overlap (rather than left edges) also lines up right-aligned numbers.
+    /// </summary>
+    internal static List<(double Left, double Right)> Columns(IReadOnlyList<PageLine> rows)
+    {
+        var columns = new List<(double Left, double Right)>();
+        foreach (var (left, right) in rows.SelectMany(r => r.Cells())
+                     .Select(c => (Left: c[0].BoundingBox.Left, Right: c[^1].BoundingBox.Right))
+                     .OrderBy(c => c.Left))
+        {
+            if (columns.Count > 0 && left <= columns[^1].Right + 2)
+                columns[^1] = (columns[^1].Left, Math.Max(columns[^1].Right, right));
+            else
+                columns.Add((left, right));
+        }
+        return columns;
+    }
+
+    /// <summary>Consecutive column-aligned lines (at least two, close together) form a table.</summary>
+    private static int TableRowCount(IReadOnlyList<PageLine> lines, int start)
+    {
+        var end = start;
+        while (end < lines.Count && lines[end].HasColumns
+               && (end == start || lines[end - 1].Bottom - lines[end].Top <= lines[end - 1].Size * 2.5))
+            end++;
+        var count = end - start;
+        return count >= 2 && Columns(lines.Skip(start).Take(count).ToList()).Count >= 2 ? count : 0;
     }
 
     /// <summary>
@@ -115,6 +164,20 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
         for (var i = 0; i < lines.Count; i++)
         {
             var line = lines[i];
+            var tableRows = TableRowCount(lines, i);
+            if (tableRows > 0)
+            {
+                if (paragraph.Count > 0)
+                {
+                    writer.Paragraph(paragraph, bodySize, textWidth);
+                    paragraph.Clear();
+                }
+                while (nextImage < images.Count && images[nextImage].BoundingBox.Top > line.Top)
+                    writer.Image(images[nextImage++], page.Width);
+                writer.Table(lines.Skip(i).Take(tableRows).ToList());
+                i += tableRows - 1;
+                continue;
+            }
             if (paragraph.Count > 0 && !Continues(paragraph[^1], line, textWidth))
             {
                 writer.Paragraph(paragraph, bodySize, textWidth);
@@ -202,6 +265,44 @@ public sealed class PdfToWordOperation(ITextRecognizer? ocr = null) : PerFileOpe
                 }
             }
             body.Append(paragraph);
+        }
+
+        /// <summary>A real Word table: one row per line, cells placed in the shared column ranges.</summary>
+        public void Table(IReadOnlyList<PageLine> rows)
+        {
+            static T Line<T>() where T : BorderType, new() => new() { Val = BorderValues.Single, Size = 4U, Color = "A6A6A6" };
+
+            var columns = Columns(rows);
+            var table = new Table(new TableProperties(
+                new TableWidth { Type = TableWidthUnitValues.Auto, Width = "0" },
+                new TableLayout { Type = TableLayoutValues.Autofit },
+                new TableBorders(Line<TopBorder>(), Line<BottomBorder>(), Line<LeftBorder>(), Line<RightBorder>(), Line<InsideHorizontalBorder>(), Line<InsideVerticalBorder>())));
+            table.Append(new TableGrid(columns.Select(c => new GridColumn { Width = ((int)((c.Right - c.Left + 12) * 20)).ToString() })));
+
+            foreach (var row in rows)
+            {
+                var cells = new List<Word>[columns.Count];
+                foreach (var cell in row.Cells())
+                {
+                    var left = cell[0].BoundingBox.Left;
+                    var index = columns.FindIndex(c => left >= c.Left - 2 && left <= c.Right + 2);
+                    if (index < 0)
+                        index = columns.Count - 1;
+                    (cells[index] ??= []).AddRange(cell);
+                }
+
+                var tableRow = new TableRow();
+                foreach (var words in cells)
+                {
+                    var paragraph = new Paragraph(new ParagraphProperties(new SpacingBetweenLines { After = "0", Before = "0" }));
+                    if (words is not null)
+                        for (var w = 0; w < words.Count; w++)
+                            paragraph.Append(WordRun((w == 0 ? "" : " ") + words[w].Text, words[w], heading: false));
+                    tableRow.Append(new TableCell(paragraph));
+                }
+                table.Append(tableRow);
+            }
+            body.Append(table, new Paragraph(Spacing()));
         }
 
         /// <summary>Tab stops at the columns' left edges, so table rows line up in Word.</summary>

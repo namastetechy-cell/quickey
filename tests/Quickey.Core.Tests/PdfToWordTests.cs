@@ -44,7 +44,7 @@ public class PdfToWordTests : IDisposable
         var text = docx.MainDocumentPart!.Document!.Body!.InnerText;
 
         Assert.DoesNotContain("%PDF", text);
-        var order = new[] { "Quarterly Report", "Prepared for the board", "Revenue grew", "three years", "Rent" }.Select(s => text.IndexOf(s)).ToList();
+        var order = new[] { "Quarterly Report", "Prepared for the board", "Revenue grew", "three years", "Item", "Rent" }.Select(s => text.IndexOf(s)).ToList();
         Assert.All(order, i => Assert.True(i >= 0, text));
         Assert.Equal(order.Order(), order);
     }
@@ -72,13 +72,52 @@ public class PdfToWordTests : IDisposable
         Assert.Null(runs.First(r => r.InnerText.Contains("Revenue")).RunProperties!.Bold);
     }
 
+    private static List<List<string>> Cells(Table table) =>
+        table.Elements<TableRow>().Select(r => r.Elements<TableCell>().Select(c => c.InnerText).ToList()).ToList();
+
     [Fact]
-    public async Task Columns_are_separated_by_tabs()
+    public async Task Rows_in_columns_become_a_real_table()
     {
         using var docx = await Convert(Report());
 
-        var row = docx.MainDocumentPart!.Document!.Body!.Elements<Paragraph>().First(p => p.InnerText.Contains("Rent"));
-        Assert.Contains("Rent\t1,200", row.InnerText);
+        var table = Assert.Single(docx.MainDocumentPart!.Document!.Body!.Elements<Table>());
+        Assert.Equal([["Item", "Amount"], ["Rent", "1,200"]], Cells(table));
+        Assert.NotNull(table.Descendants<Run>().First(r => r.InnerText == "Item").RunProperties!.Bold);
+    }
+
+    [Fact]
+    public async Task Right_aligned_numbers_stay_in_their_column()
+    {
+        var path = _temp.File("gst.pdf");
+        new PdfBuilder()
+            .Text(72, 700, "Invoice", font: 2).Text(250, 700, "Taxable", font: 2).Text(400, 700, "GST", font: 2)
+            .Text(72, 686, "INV-001").Text(262, 686, "1,200.00").Text(400, 686, "216.00")
+            .Text(72, 672, "INV-002").Text(250, 672, "15,000.00").Text(394, 672, "2,700.00")
+            .Text(72, 658, "Total", font: 2).Text(250, 658, "16,200.00", font: 2).Text(394, 658, "2,916.00", font: 2)
+            .Save(path);
+
+        using var docx = await Convert(path);
+
+        var table = Assert.Single(docx.MainDocumentPart!.Document!.Body!.Elements<Table>());
+        Assert.Equal(
+            [["Invoice", "Taxable", "GST"], ["INV-001", "1,200.00", "216.00"], ["INV-002", "15,000.00", "2,700.00"], ["Total", "16,200.00", "2,916.00"]],
+            Cells(table));
+    }
+
+    [Fact]
+    public async Task A_lone_label_and_value_line_stays_a_tabbed_paragraph()
+    {
+        var path = _temp.File("form.pdf");
+        new PdfBuilder()
+            .Text(72, 700, "Name:").Text(250, 700, "Asha Rao")
+            .Text(72, 660, "Thanks for your business.")
+            .Save(path);
+
+        using var docx = await Convert(path);
+
+        var body = docx.MainDocumentPart!.Document!.Body!;
+        Assert.Empty(body.Elements<Table>());
+        Assert.Contains("Name:\tAsha Rao", body.InnerText);
     }
 
     [Fact]
