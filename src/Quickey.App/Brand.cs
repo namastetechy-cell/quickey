@@ -14,7 +14,7 @@ public static class Brand
     public static readonly LicenseProduct LicenseProduct = new(StoreId: 514914, ProductId: 1536053);
 
     /// <summary>Lemon Squeezy checkout link for Quickey Pro. Empty hides the "Get Pro" buttons.</summary>
-    public static readonly string CheckoutUrl = "";
+    public static readonly string CheckoutUrl = "https://getquickey.lemonsqueezy.com/checkout/buy/3206e744-ac42-4584-bb6e-55e3a82de228";
 
     public static readonly string SupportEmail = "";
 
