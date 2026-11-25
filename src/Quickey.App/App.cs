@@ -90,7 +90,7 @@ public sealed class App : Application
         _wheel = new WheelWindow(registry, () => _settings);
         _tray = new TrayIcon(OpenSettings, TogglePause, OpenCheckout, OpenLogFolder, Quit);
         _runner = new OperationRunner(_entitlements, () => _settings, _tray, OpenCheckout, RefreshStatus);
-        _updates = new UpdateService(() => _settings.UpdateUrl, _tray);
+        _updates = new UpdateService(() => string.IsNullOrWhiteSpace(_settings.UpdateUrl) ? Brand.UpdateFeed : _settings.UpdateUrl, _tray);
         _wheel.OperationChosen += async (_, chosen) =>
         {
             Log.Info($"Run {chosen.Operation.Id} on {chosen.Files.Count} file(s)");

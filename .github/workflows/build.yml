@@ -57,9 +57,10 @@ jobs:
       - name: GitHub Release
         if: github.ref_type == 'tag' || inputs.version != ''
         env:
-          GH_TOKEN: ${{ github.token }}
-        # From a manual run the tag doesn't exist yet; gh creates it on the built commit.
-        run: gh release create v${{ steps.version.outputs.value }} Releases/* --target ${{ github.sha }} --title "Quickey ${{ steps.version.outputs.value }}" --generate-notes
+          # A fine-grained token with Contents: read and write on quickey-releases (this repo is private,
+          # so customers download and update from that public one).
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: gh release create v${{ steps.version.outputs.value }} Releases/* --repo namastetechy-cell/quickey-releases --title "Quickey ${{ steps.version.outputs.value }}" --notes "Quickey ${{ steps.version.outputs.value }} for Windows 10 and 11. Download Quickey-win-Setup.exe below."
 
   core-linux:
     # The conversion engine is cross-platform; this catches regressions fast without a Windows runner.

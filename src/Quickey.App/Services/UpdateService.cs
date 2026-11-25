@@ -1,4 +1,5 @@
 using Velopack;
+using Velopack.Sources;
 
 namespace Quickey.App.Services;
 
@@ -18,7 +19,10 @@ public sealed class UpdateService(Func<string> feedUrl, TrayIcon tray)
             return;
         try
         {
-            _manager = new UpdateManager(url);
+            // A GitHub repo URL reads its releases (newest first, deltas included); anything else is a plain web feed.
+            _manager = url.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase)
+                ? new UpdateManager(new GithubSource(url, accessToken: null, prerelease: false))
+                : new UpdateManager(url);
             if (!_manager.IsInstalled)
                 return;
             var update = await _manager.CheckForUpdatesAsync();

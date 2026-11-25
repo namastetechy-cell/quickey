@@ -18,5 +18,11 @@ public static class Brand
 
     public static readonly string SupportEmail = "";
 
+    /// <summary>Public repo whose GitHub Releases hold the installers; also the auto-update feed.</summary>
+    public const string UpdateFeed = "https://github.com/namastetechy-cell/quickey-releases";
+
+    /// <summary>Where people download the installer.</summary>
+    public const string DownloadUrl = UpdateFeed + "/releases/latest/download/Quickey-win-Setup.exe";
+
     public static bool IsStoreConfigured => LicenseProduct.StoreId != 0 && LicenseProduct.ProductId != 0;
 }
