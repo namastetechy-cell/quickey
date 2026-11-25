@@ -11,7 +11,7 @@ public static class Brand
 {
     public const string Name = "Quickey";
 
-    public static readonly LicenseProduct LicenseProduct = new(StoreId: 0, ProductId: 0);
+    public static readonly LicenseProduct LicenseProduct = new(StoreId: 514914, ProductId: 1536053);
 
     /// <summary>Lemon Squeezy checkout link for Quickey Pro. Empty hides the "Get Pro" buttons.</summary>
     public static readonly string CheckoutUrl = "";
