@@ -8,7 +8,7 @@ namespace Quickey.Core.Tests;
 
 public class LicensingTests : IDisposable
 {
-    private static readonly LicenseProduct Product = new(StoreId: 111, ProductId: 222);
+    private static readonly LicenseServer Server = new(LicenseServer.Test, ["pdt_ours", "pdt_ours_india"]);
 
     private readonly TempFolder _temp = new();
     private readonly FakeTimeProvider _clock = new(new DateTimeOffset(2026, 10, 23, 9, 0, 0, TimeSpan.Zero));
@@ -17,55 +17,93 @@ public class LicensingTests : IDisposable
 
     public void Dispose() => _temp.Dispose();
 
-    private LicenseManager Manager() => new(new LemonSqueezyClient(new HttpClient(_server), Product, _clock), _store, _clock);
+    private LicenseManager Manager() => new(new DodoLicenseClient(new HttpClient(_server), Server, _clock), _store, _clock);
 
-    private const string ActivatedOurs = """
-        {"activated":true,"error":null,"license_key":{"status":"active"},"instance":{"id":"inst-1"},
-         "meta":{"store_id":111,"product_id":222,"customer_email":"buyer@example.com"}}
+    private static string Activated(string product) => $$$"""
+        {"id":"lki_1","business_id":"bus_1","name":"My-PC","license_key_id":"lic_1","created_at":"2026-10-23T09:00:00Z",
+         "product":{"product_id":"{{{product}}}","name":"Quickey Pro"},
+         "customer":{"customer_id":"cus_1","email":"buyer@example.com","name":"Asha"}}
         """;
 
-    [Fact]
-    public async Task Activating_a_good_key_makes_the_pc_pro()
+    [Theory]
+    [InlineData("pdt_ours")]
+    [InlineData("pdt_ours_india")]
+    public async Task Activating_a_good_key_makes_the_pc_pro(string product)
     {
-        _server.Reply(ActivatedOurs);
+        _server.Reply(Activated(product), HttpStatusCode.Created);
         var manager = Manager();
 
         var result = await manager.ActivateAsync("  KEY-123 ", "My-PC");
 
         Assert.True(result.Success);
         Assert.True(manager.IsPro);
-        Assert.Equal(new LicenseRecord("KEY-123", "inst-1", "buyer@example.com", _clock.GetUtcNow()), _store.Record);
-        Assert.Contains("license_key=KEY-123", _server.Bodies[0]);
+        Assert.Equal(new LicenseRecord("KEY-123", "lki_1", "buyer@example.com", _clock.GetUtcNow()), _store.Record);
+        Assert.Equal("https://test.dodopayments.com/licenses/activate", _server.Paths[0]);
+        Assert.Contains("\"license_key\":\"KEY-123\"", _server.Bodies[0]);
+        Assert.Contains("\"name\":\"My-PC\"", _server.Bodies[0]);
     }
 
     [Fact]
     public async Task Rejects_and_releases_a_key_from_another_product()
     {
-        _server.Reply("""{"activated":true,"instance":{"id":"inst-9"},"meta":{"store_id":111,"product_id":999}}""");
-        _server.Reply("""{"deactivated":true}""");
+        _server.Reply(Activated("pdt_someone_else"), HttpStatusCode.Created);
+        _server.Reply("{}");
         var manager = Manager();
 
         var result = await manager.ActivateAsync("OTHER", "My-PC");
 
         Assert.False(result.Success);
         Assert.False(manager.IsPro);
-        Assert.EndsWith("/deactivate", _server.Paths[1]);
+        Assert.EndsWith("/licenses/deactivate", _server.Paths[1]);
+        Assert.Contains("\"license_key_instance_id\":\"lki_1\"", _server.Bodies[1]);
     }
 
-    [Fact]
-    public async Task Surfaces_the_server_error_for_a_bad_key()
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound, "wasn't found")]
+    [InlineData(HttpStatusCode.Forbidden, "isn't active")]
+    [InlineData(HttpStatusCode.UnprocessableEntity, "2 PCs")]
+    public async Task Explains_why_a_key_was_refused(HttpStatusCode status, string expected)
     {
-        _server.Reply("""{"activated":false,"error":"license_key not found."}""", HttpStatusCode.NotFound);
+        _server.Reply("""{"code":"NOT_FOUND","message":"The requested resource could not be found."}""", status);
 
         var result = await Manager().ActivateAsync("NOPE", "My-PC");
 
-        Assert.Equal("license_key not found.", result.Error);
+        Assert.False(result.Success);
+        Assert.Contains(expected, result.Error);
+    }
+
+    [Fact]
+    public async Task A_still_valid_key_stays_pro_after_the_daily_check()
+    {
+        _store.Record = new LicenseRecord("KEY", "lki_1", null, _clock.GetUtcNow());
+        var manager = Manager();
+        _server.Reply("""{"valid":true}""");
+
+        _clock.Advance(TimeSpan.FromDays(20));
+        await manager.RefreshAsync();
+
+        Assert.True(manager.IsPro);
+        Assert.Contains("\"license_key_instance_id\":\"lki_1\"", _server.Bodies[0]);
+    }
+
+    [Fact]
+    public async Task A_server_error_counts_as_offline_not_as_revoked()
+    {
+        _store.Record = new LicenseRecord("KEY", "lki_1", null, _clock.GetUtcNow());
+        var manager = Manager();
+        _server.Reply("oops", HttpStatusCode.TooManyRequests);
+
+        _clock.Advance(TimeSpan.FromDays(2));
+        await manager.RefreshAsync();
+
+        Assert.True(manager.IsPro);
+        Assert.NotNull(_store.Record);
     }
 
     [Fact]
     public async Task Keeps_working_offline_within_the_grace_period_then_lapses()
     {
-        _store.Record = new LicenseRecord("KEY", "inst-1", null, _clock.GetUtcNow());
+        _store.Record = new LicenseRecord("KEY", "lki_1", null, _clock.GetUtcNow());
         var manager = Manager();
         _server.Fail();
 
@@ -81,9 +119,9 @@ public class LicensingTests : IDisposable
     [Fact]
     public async Task A_revoked_key_is_forgotten_on_the_next_check()
     {
-        _store.Record = new LicenseRecord("KEY", "inst-1", null, _clock.GetUtcNow());
+        _store.Record = new LicenseRecord("KEY", "lki_1", null, _clock.GetUtcNow());
         var manager = Manager();
-        _server.Reply("""{"valid":false,"error":"license_key disabled"}""");
+        _server.Reply("""{"valid":false}""");
 
         _clock.Advance(TimeSpan.FromDays(2));
         await manager.RefreshAsync();
@@ -95,7 +133,7 @@ public class LicensingTests : IDisposable
     [Fact]
     public async Task Does_not_recheck_more_than_once_a_day()
     {
-        _store.Record = new LicenseRecord("KEY", "inst-1", null, _clock.GetUtcNow());
+        _store.Record = new LicenseRecord("KEY", "lki_1", null, _clock.GetUtcNow());
         var manager = Manager();
 
         _clock.Advance(TimeSpan.FromHours(5));
@@ -131,7 +169,7 @@ public class LicensingTests : IDisposable
         Assert.False(free.CanRun(convert, 1));
         Assert.True(free.CanRun(action, 50));
 
-        _store.Record = new LicenseRecord("KEY", "inst-1", null, _clock.GetUtcNow());
+        _store.Record = new LicenseRecord("KEY", "lki_1", null, _clock.GetUtcNow());
         var pro = new Entitlements(Manager(), usage);
         Assert.True(pro.CanRun(convert, 500));
     }
@@ -184,7 +222,7 @@ public class LicensingTests : IDisposable
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Paths.Add(request.RequestUri!.AbsolutePath);
+            Paths.Add(request.RequestUri!.AbsoluteUri);
             Bodies.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
             if (_down)
                 throw new HttpRequestException("offline");

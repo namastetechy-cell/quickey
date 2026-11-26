@@ -16,11 +16,18 @@ Download `Quickey-win-Setup.exe` from the latest Actions run, install, then chec
 - [ ] Settings: change keys, toggle right-click menu and start with Windows, then reboot.
 - [ ] Uninstall from Settings → Apps: right-click entry and startup entry are gone.
 
-## 2. Selling (Lemon Squeezy)
+## 2. Selling (Dodo Payments)
 
-1. Create a store and a product "Quickey Pro" with **license keys enabled** (e.g. 2–3 activations per key).
-2. Put the store ID, product ID and checkout URL into `src/Quickey.App/Brand.cs`.
-3. Test with a test-mode key: activate, deactivate, re-activate on another PC.
+Lemon Squeezy stops taking payments on 31 March 2027, so licenses are sold through Dodo Payments
+(merchant of record, supports Indian sellers and UPI).
+
+1. Two products with **license keys on, activation limit 2, no expiry, tax-inclusive price**:
+   "Quickey Pro" ($) and "Quickey Pro (India)" (₹699).
+2. Put both product IDs into `Brand.LicenseServer` in `src/Quickey.App/Brand.cs`, and the checkout links
+   (`https://checkout.dodopayments.com/buy/<product id>`) into the website's pricing section.
+3. Test mode uses `LicenseServer.Test` and `test.checkout.dodopayments.com`; test-mode product IDs differ
+   from live ones. At go-live switch to `LicenseServer.Live` with the live IDs and publish a release.
+4. Test with a test-mode key: activate, deactivate, re-activate on another PC.
 
 ## 3. Code signing (important)
 
@@ -31,9 +38,9 @@ to the `vpk pack` step.
 
 ## 4. Updates
 
-Host the `Releases/` folder contents on your site or a bucket (e.g. `https://downloads.<your-domain>/quickey`)
-and set that URL as the default `UpdateUrl` in `AppSettings`. Each release: upload the new files next to
-the old ones.
+Releases are published to the public `namastetechy-cell/quickey-releases` repo (the `RELEASES_TOKEN`
+secret lets CI write there), which is also the update feed (`Brand.UpdateFeed`) and hosts the website on
+GitHub Pages.
 
 ## 5. Before you buy a domain
 

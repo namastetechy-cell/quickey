@@ -25,7 +25,7 @@ Results are saved next to the original (or in a `Quickey` subfolder) and **never
 ## Free vs Pro
 
 - **Free:** 10 conversions/tools per day (each file counts once). File actions are always free and unlimited.
-- **Pro:** unlimited. Sold through Lemon Squeezy; the key is activated in Settings → License.
+- **Pro:** unlimited. Sold through Dodo Payments; the key is activated in Settings → License.
 
 ## Project layout
 

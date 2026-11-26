@@ -77,8 +77,8 @@ public sealed class App : Application
         }
 
         var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        _license = new LicenseManager(new LemonSqueezyClient(http, Brand.LicenseProduct), new DpapiLicenseStore(AppPaths.License));
-        // Until the Lemon Squeezy store is filled in (Brand.cs) nothing can be bought, so it's a testing build: unlimited.
+        _license = new LicenseManager(new DodoLicenseClient(http, Brand.LicenseServer), new DpapiLicenseStore(AppPaths.License));
+        // Until the Dodo Payments products are filled in (Brand.cs) nothing can be bought, so it's a testing build: unlimited.
         _entitlements = new Entitlements(_license, _usage, unlimited: !Brand.IsStoreConfigured);
 
         var dialogs = new Quickey.Core.Images.ImageDialogs(new CropPrompt(), new CompressPrompt(), new MetadataPrompt(), new EditPrompt(), new PortalPrompt());

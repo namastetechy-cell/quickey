@@ -4,7 +4,7 @@ namespace Quickey.Core.Licensing;
 /// Decides whether this PC is Pro. A license is re-checked online at most once a day; if the server
 /// can't be reached the license keeps working for <see cref="OfflineGrace"/> after the last good check.
 /// </summary>
-public sealed class LicenseManager(LemonSqueezyClient client, ILicenseStore store, TimeProvider? clock = null)
+public sealed class LicenseManager(DodoLicenseClient client, ILicenseStore store, TimeProvider? clock = null)
 {
     public static readonly TimeSpan RecheckInterval = TimeSpan.FromDays(1);
     public static readonly TimeSpan OfflineGrace = TimeSpan.FromDays(14);

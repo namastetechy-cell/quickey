@@ -48,9 +48,9 @@ dropped files, so mixed selections just show fewer options.
 
 ## Licensing
 
-`Quickey.Core/Licensing` talks to the Lemon Squeezy License API. No API secret ships in the app; those
-endpoints take the license key as the credential. Activation is accepted only if the key belongs to the
-store and product IDs in `Brand.cs`. The activation is stored DPAPI-encrypted (current user), re-validated
+`Quickey.Core/Licensing` talks to Dodo Payments' public license endpoints. No API secret ships in the app;
+those endpoints take the license key as the credential. Activation is accepted only if the key belongs to
+one of the product IDs in `Brand.cs`. The activation is stored DPAPI-encrypted (current user), re-validated
 at most daily, and keeps working offline for 14 days. The free allowance is a local counter, which a
 determined user could reset. That's an accepted trade-off for a low-friction free tier.
 
